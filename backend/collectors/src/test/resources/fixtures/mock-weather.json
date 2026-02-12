@@ -1,0 +1,16 @@
+{
+  "locations": [
+    {
+      "location": "Boston",
+      "tempF": 41.5,
+      "conditions": "Cloudy",
+      "alerts": ["Storm watch"]
+    },
+    {
+      "location": "Seattle",
+      "tempF": 50.1,
+      "conditions": "Rain",
+      "alerts": []
+    }
+  ]
+}

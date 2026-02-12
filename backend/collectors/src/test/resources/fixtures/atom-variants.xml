@@ -1,0 +1,17 @@
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Variant Atom</title>
+  <entry>
+    <title>Atom <b>Bold</b> News</title>
+    <link href="https://example.com/atom-bold" />
+    <updated>2026-02-09T16:00:00Z</updated>
+  </entry>
+  <entry>
+    <link href="https://example.com/atom-untitled" />
+    <published>2026-02-09T10:00:00-05:00</published>
+  </entry>
+  <entry>
+    <title>Atom bad date</title>
+    <link href="https://example.com/atom-bad-date" />
+    <updated>bogus</updated>
+  </entry>
+</feed>

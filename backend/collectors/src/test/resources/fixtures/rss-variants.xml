@@ -1,0 +1,25 @@
+<rss version="2.0">
+  <channel>
+    <title>Variant RSS</title>
+    <item>
+      <title>Standard story</title>
+      <link>https://example.com/std</link>
+      <pubDate>Mon, 09 Feb 2026 16:00:00 GMT</pubDate>
+      <description>Plain text description</description>
+    </item>
+    <item>
+      <title><![CDATA[<b>Storm</b> warning]]></title>
+      <link>https://example.com/storm</link>
+      <description><![CDATA[<p>Heavy rain expected</p>]]></description>
+    </item>
+    <item>
+      <link>https://example.com/no-title</link>
+      <pubDate>2026-02-09T15:30:00Z</pubDate>
+    </item>
+    <item>
+      <title>Bad date sample</title>
+      <link>https://example.com/bad-date</link>
+      <pubDate>not-a-date</pubDate>
+    </item>
+  </channel>
+</rss>

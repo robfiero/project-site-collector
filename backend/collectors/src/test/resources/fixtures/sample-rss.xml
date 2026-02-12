@@ -1,0 +1,25 @@
+<rss version="2.0">
+  <channel>
+    <title>Sample Feed</title>
+    <item>
+      <title>Storm front moving in</title>
+      <link>https://example.com/a</link>
+      <pubDate>Mon, 09 Feb 2026 16:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Market opens higher</title>
+      <link>https://example.com/b</link>
+      <pubDate>Mon, 09 Feb 2026 15:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Transit updates posted</title>
+      <link>https://example.com/c</link>
+      <pubDate>Mon, 09 Feb 2026 14:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Older item</title>
+      <link>https://example.com/d</link>
+      <pubDate>Mon, 09 Feb 2026 13:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -2,6 +2,7 @@ package com.signalsentinel.core.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,10 +31,15 @@ public final class HtmlUtils {
         List<String> links = new ArrayList<>();
         while (matcher.find()) {
             String link = matcher.group(2).trim();
-            if (!link.isEmpty()) {
+            if (!link.isEmpty() && isAllowedLink(link)) {
                 links.add(link);
             }
         }
         return links;
+    }
+
+    private static boolean isAllowedLink(String link) {
+        String lowered = link.toLowerCase(Locale.ROOT);
+        return !lowered.startsWith("mailto:") && !lowered.startsWith("javascript:");
     }
 }

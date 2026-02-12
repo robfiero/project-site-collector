@@ -19,6 +19,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>25</maven.compiler.release>
+    <preview.flag>--enable-preview</preview.flag>
     <junit.version>5.12.0</junit.version>
     <jackson.version>2.18.3</jackson.version>
   </properties>
@@ -53,6 +54,9 @@
           <version>3.14.0</version>
           <configuration>
             <release>${maven.compiler.release}</release>
+            <compilerArgs>
+              <arg>${preview.flag}</arg>
+            </compilerArgs>
           </configuration>
         </plugin>
         <plugin>
@@ -61,6 +65,18 @@
           <version>3.5.2</version>
           <configuration>
             <useModulePath>false</useModulePath>
+            <argLine>${preview.flag}</argLine>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>3.5.0</version>
+          <configuration>
+            <executable>java</executable>
+            <arguments>
+              <argument>${preview.flag}</argument>
+            </arguments>
           </configuration>
         </plugin>
       </plugins>
