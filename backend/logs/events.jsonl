@@ -1,0 +1,348 @@
+{"type":"CollectorTickStarted","timestamp":1771093678.895073000,"event":{"timestamp":1771093678.895073000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093678.895107000,"event":{"timestamp":1771093678.895107000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093678.895201000,"event":{"timestamp":1771093678.895201000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771093678.908308000,"event":{"timestamp":1771093678.908308000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771093678.908602000,"event":{"timestamp":1771093678.908602000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771093678.909195000,"event":{"timestamp":1771093678.909195000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093678.914282000,"event":{"timestamp":1771093678.914282000,"collectorName":"weatherCollector","success":true,"durationMillis":19}}
+{"type":"SiteFetched","timestamp":1771093679.069059000,"event":{"timestamp":1771093679.069059000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":166}}
+{"type":"AlertRaised","timestamp":1771093679.069015000,"event":{"timestamp":1771093679.069015000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771093679.070915000,"event":{"timestamp":1771093679.070915000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093679.073500000,"event":{"timestamp":1771093679.073500000,"collectorName":"rssCollector","success":false,"durationMillis":178}}
+{"type":"CollectorTickCompleted","timestamp":1771093679.075445000,"event":{"timestamp":1771093679.075445000,"collectorName":"siteCollector","success":false,"durationMillis":180}}
+{"type":"CollectorTickStarted","timestamp":1771093792.840206000,"event":{"timestamp":1771093792.840206000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093792.840206000,"event":{"timestamp":1771093792.840206000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093792.840527000,"event":{"timestamp":1771093792.840527000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771093792.852179000,"event":{"timestamp":1771093792.852179000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771093792.852404000,"event":{"timestamp":1771093792.852404000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771093792.852894000,"event":{"timestamp":1771093792.852894000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093792.856096000,"event":{"timestamp":1771093792.856096000,"collectorName":"weatherCollector","success":true,"durationMillis":15}}
+{"type":"AlertRaised","timestamp":1771093792.965985000,"event":{"timestamp":1771093792.965985000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"SiteFetched","timestamp":1771093792.966028000,"event":{"timestamp":1771093792.966028000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":118}}
+{"type":"CollectorTickCompleted","timestamp":1771093792.967027000,"event":{"timestamp":1771093792.967027000,"collectorName":"rssCollector","success":false,"durationMillis":126}}
+{"type":"AlertRaised","timestamp":1771093792.967292000,"event":{"timestamp":1771093792.967292000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093792.968536000,"event":{"timestamp":1771093792.968536000,"collectorName":"siteCollector","success":false,"durationMillis":128}}
+{"type":"CollectorTickStarted","timestamp":1771093822.844659000,"event":{"timestamp":1771093822.844659000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771093822.902220000,"event":{"timestamp":1771093822.902220000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":54}}
+{"type":"AlertRaised","timestamp":1771093822.902736000,"event":{"timestamp":1771093822.902736000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093822.903142000,"event":{"timestamp":1771093822.903142000,"collectorName":"siteCollector","success":false,"durationMillis":58}}
+{"type":"CollectorTickStarted","timestamp":1771093852.844822000,"event":{"timestamp":1771093852.844822000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093852.844834000,"event":{"timestamp":1771093852.844834000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093852.844823000,"event":{"timestamp":1771093852.844823000,"collectorName":"siteCollector"}}
+{"type":"WeatherUpdated","timestamp":1771093852.864359000,"event":{"timestamp":1771093852.864359000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771093852.865920000,"event":{"timestamp":1771093852.865920000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771093852.866334000,"event":{"timestamp":1771093852.866334000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093852.868749000,"event":{"timestamp":1771093852.868749000,"collectorName":"weatherCollector","success":true,"durationMillis":23}}
+{"type":"AlertRaised","timestamp":1771093852.943037000,"event":{"timestamp":1771093852.943037000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093852.944080000,"event":{"timestamp":1771093852.944080000,"collectorName":"rssCollector","success":false,"durationMillis":99}}
+{"type":"SiteFetched","timestamp":1771093852.946268000,"event":{"timestamp":1771093852.946268000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":89}}
+{"type":"AlertRaised","timestamp":1771093852.947133000,"event":{"timestamp":1771093852.947133000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093852.948473000,"event":{"timestamp":1771093852.948473000,"collectorName":"siteCollector","success":false,"durationMillis":103}}
+{"type":"CollectorTickStarted","timestamp":1771093882.854680000,"event":{"timestamp":1771093882.854680000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771093882.937645000,"event":{"timestamp":1771093882.937645000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":74}}
+{"type":"AlertRaised","timestamp":1771093882.939418000,"event":{"timestamp":1771093882.939418000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093882.941182000,"event":{"timestamp":1771093882.941182000,"collectorName":"siteCollector","success":false,"durationMillis":86}}
+{"type":"CollectorTickStarted","timestamp":1771093912.843424000,"event":{"timestamp":1771093912.843424000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093912.843425000,"event":{"timestamp":1771093912.843425000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093912.843425000,"event":{"timestamp":1771093912.843425000,"collectorName":"weatherCollector"}}
+{"type":"WeatherUpdated","timestamp":1771093912.855500000,"event":{"timestamp":1771093912.855500000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771093912.856296000,"event":{"timestamp":1771093912.856296000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771093912.856354000,"event":{"timestamp":1771093912.856354000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093912.857861000,"event":{"timestamp":1771093912.857861000,"collectorName":"weatherCollector","success":true,"durationMillis":14}}
+{"type":"SiteFetched","timestamp":1771093912.972037000,"event":{"timestamp":1771093912.972037000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":120}}
+{"type":"AlertRaised","timestamp":1771093912.973033000,"event":{"timestamp":1771093912.973033000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093912.974175000,"event":{"timestamp":1771093912.974175000,"collectorName":"siteCollector","success":false,"durationMillis":130}}
+{"type":"AlertRaised","timestamp":1771093912.977040000,"event":{"timestamp":1771093912.977040000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093912.977756000,"event":{"timestamp":1771093912.977756000,"collectorName":"rssCollector","success":false,"durationMillis":134}}
+{"type":"CollectorTickStarted","timestamp":1771093942.842726000,"event":{"timestamp":1771093942.842726000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771093942.923032000,"event":{"timestamp":1771093942.923032000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":70}}
+{"type":"AlertRaised","timestamp":1771093942.924598000,"event":{"timestamp":1771093942.924598000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093942.925621000,"event":{"timestamp":1771093942.925621000,"collectorName":"siteCollector","success":false,"durationMillis":82}}
+{"type":"CollectorTickStarted","timestamp":1771093972.845915000,"event":{"timestamp":1771093972.845915000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093972.845914000,"event":{"timestamp":1771093972.845914000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771093972.845914000,"event":{"timestamp":1771093972.845914000,"collectorName":"siteCollector"}}
+{"type":"WeatherUpdated","timestamp":1771093972.852097000,"event":{"timestamp":1771093972.852097000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771093972.852639000,"event":{"timestamp":1771093972.852639000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771093972.852696000,"event":{"timestamp":1771093972.852696000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771093972.854646000,"event":{"timestamp":1771093972.854646000,"collectorName":"weatherCollector","success":true,"durationMillis":8}}
+{"type":"AlertRaised","timestamp":1771093972.934459000,"event":{"timestamp":1771093972.934459000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093972.936031000,"event":{"timestamp":1771093972.936031000,"collectorName":"rssCollector","success":false,"durationMillis":90}}
+{"type":"SiteFetched","timestamp":1771093972.940285000,"event":{"timestamp":1771093972.940285000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":89}}
+{"type":"AlertRaised","timestamp":1771093972.941614000,"event":{"timestamp":1771093972.941614000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771093972.942499000,"event":{"timestamp":1771093972.942499000,"collectorName":"siteCollector","success":false,"durationMillis":96}}
+{"type":"CollectorTickStarted","timestamp":1771094002.844716000,"event":{"timestamp":1771094002.844716000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094002.936666000,"event":{"timestamp":1771094002.936666000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":81}}
+{"type":"AlertRaised","timestamp":1771094002.938233000,"event":{"timestamp":1771094002.938233000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094002.939862000,"event":{"timestamp":1771094002.939862000,"collectorName":"siteCollector","success":false,"durationMillis":95}}
+{"type":"CollectorTickStarted","timestamp":1771094032.846829000,"event":{"timestamp":1771094032.846829000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094032.846830000,"event":{"timestamp":1771094032.846830000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094032.846829000,"event":{"timestamp":1771094032.846829000,"collectorName":"weatherCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094032.859204000,"event":{"timestamp":1771094032.859204000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094032.860295000,"event":{"timestamp":1771094032.860295000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094032.860401000,"event":{"timestamp":1771094032.860401000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094032.861932000,"event":{"timestamp":1771094032.861932000,"collectorName":"weatherCollector","success":true,"durationMillis":15}}
+{"type":"SiteFetched","timestamp":1771094032.957543000,"event":{"timestamp":1771094032.957543000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":102}}
+{"type":"AlertRaised","timestamp":1771094032.958447000,"event":{"timestamp":1771094032.958447000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094032.959030000,"event":{"timestamp":1771094032.959030000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094032.959871000,"event":{"timestamp":1771094032.959871000,"collectorName":"rssCollector","success":false,"durationMillis":113}}
+{"type":"CollectorTickCompleted","timestamp":1771094032.960513000,"event":{"timestamp":1771094032.960513000,"collectorName":"siteCollector","success":false,"durationMillis":113}}
+{"type":"CollectorTickStarted","timestamp":1771094062.846907000,"event":{"timestamp":1771094062.846907000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094062.927253000,"event":{"timestamp":1771094062.927253000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":73}}
+{"type":"AlertRaised","timestamp":1771094062.928416000,"event":{"timestamp":1771094062.928416000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094062.929238000,"event":{"timestamp":1771094062.929238000,"collectorName":"siteCollector","success":false,"durationMillis":82}}
+{"type":"CollectorTickStarted","timestamp":1771094092.841797000,"event":{"timestamp":1771094092.841797000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094092.841910000,"event":{"timestamp":1771094092.841910000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094092.841893000,"event":{"timestamp":1771094092.841893000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094092.846916000,"event":{"timestamp":1771094092.846916000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094092.847584000,"event":{"timestamp":1771094092.847584000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771094092.847739000,"event":{"timestamp":1771094092.847739000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771094092.848953000,"event":{"timestamp":1771094092.848953000,"collectorName":"weatherCollector","success":true,"durationMillis":7}}
+{"type":"SiteFetched","timestamp":1771094092.927954000,"event":{"timestamp":1771094092.927954000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":83}}
+{"type":"AlertRaised","timestamp":1771094092.927936000,"event":{"timestamp":1771094092.927936000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094092.929110000,"event":{"timestamp":1771094092.929110000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094092.929683000,"event":{"timestamp":1771094092.929683000,"collectorName":"rssCollector","success":false,"durationMillis":87}}
+{"type":"CollectorTickCompleted","timestamp":1771094092.929954000,"event":{"timestamp":1771094092.929954000,"collectorName":"siteCollector","success":false,"durationMillis":88}}
+{"type":"CollectorTickStarted","timestamp":1771094122.847155000,"event":{"timestamp":1771094122.847155000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094122.905970000,"event":{"timestamp":1771094122.905970000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":53}}
+{"type":"AlertRaised","timestamp":1771094122.906905000,"event":{"timestamp":1771094122.906905000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094122.908187000,"event":{"timestamp":1771094122.908187000,"collectorName":"siteCollector","success":false,"durationMillis":61}}
+{"type":"CollectorTickStarted","timestamp":1771094152.847211000,"event":{"timestamp":1771094152.847211000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094152.847213000,"event":{"timestamp":1771094152.847213000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094152.847199000,"event":{"timestamp":1771094152.847199000,"collectorName":"weatherCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094152.870997000,"event":{"timestamp":1771094152.870997000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094152.871602000,"event":{"timestamp":1771094152.871602000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771094152.872011000,"event":{"timestamp":1771094152.872011000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771094152.873503000,"event":{"timestamp":1771094152.873503000,"collectorName":"weatherCollector","success":true,"durationMillis":26}}
+{"type":"SiteFetched","timestamp":1771094152.943732000,"event":{"timestamp":1771094152.943732000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":77}}
+{"type":"AlertRaised","timestamp":1771094152.943714000,"event":{"timestamp":1771094152.943714000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094152.944824000,"event":{"timestamp":1771094152.944824000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094152.945378000,"event":{"timestamp":1771094152.945378000,"collectorName":"rssCollector","success":false,"durationMillis":98}}
+{"type":"CollectorTickCompleted","timestamp":1771094152.945827000,"event":{"timestamp":1771094152.945827000,"collectorName":"siteCollector","success":false,"durationMillis":98}}
+{"type":"CollectorTickStarted","timestamp":1771094182.847620000,"event":{"timestamp":1771094182.847620000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094182.921879000,"event":{"timestamp":1771094182.921879000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":66}}
+{"type":"AlertRaised","timestamp":1771094182.923048000,"event":{"timestamp":1771094182.923048000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094182.923751000,"event":{"timestamp":1771094182.923751000,"collectorName":"siteCollector","success":false,"durationMillis":76}}
+{"type":"CollectorTickStarted","timestamp":1771094212.845719000,"event":{"timestamp":1771094212.845719000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094212.845664000,"event":{"timestamp":1771094212.845664000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094212.845727000,"event":{"timestamp":1771094212.845727000,"collectorName":"weatherCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094212.853524000,"event":{"timestamp":1771094212.853524000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094212.854263000,"event":{"timestamp":1771094212.854263000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094212.854333000,"event":{"timestamp":1771094212.854333000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094212.855642000,"event":{"timestamp":1771094212.855642000,"collectorName":"weatherCollector","success":true,"durationMillis":9}}
+{"type":"SiteFetched","timestamp":1771094212.910986000,"event":{"timestamp":1771094212.910986000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":60}}
+{"type":"AlertRaised","timestamp":1771094212.910965000,"event":{"timestamp":1771094212.910965000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094212.912239000,"event":{"timestamp":1771094212.912239000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094212.913018000,"event":{"timestamp":1771094212.913018000,"collectorName":"rssCollector","success":false,"durationMillis":67}}
+{"type":"CollectorTickCompleted","timestamp":1771094212.913420000,"event":{"timestamp":1771094212.913420000,"collectorName":"siteCollector","success":false,"durationMillis":67}}
+{"type":"CollectorTickStarted","timestamp":1771094242.847402000,"event":{"timestamp":1771094242.847402000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094242.930440000,"event":{"timestamp":1771094242.930440000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":69}}
+{"type":"AlertRaised","timestamp":1771094242.931949000,"event":{"timestamp":1771094242.931949000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094242.934087000,"event":{"timestamp":1771094242.934087000,"collectorName":"siteCollector","success":false,"durationMillis":86}}
+{"type":"CollectorTickStarted","timestamp":1771094272.846154000,"event":{"timestamp":1771094272.846154000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094272.846156000,"event":{"timestamp":1771094272.846156000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094272.846169000,"event":{"timestamp":1771094272.846169000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094272.857208000,"event":{"timestamp":1771094272.857208000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094272.857859000,"event":{"timestamp":1771094272.857859000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771094272.858212000,"event":{"timestamp":1771094272.858212000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771094272.858946000,"event":{"timestamp":1771094272.858946000,"collectorName":"weatherCollector","success":true,"durationMillis":12}}
+{"type":"SiteFetched","timestamp":1771094272.927384000,"event":{"timestamp":1771094272.927384000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":72}}
+{"type":"AlertRaised","timestamp":1771094272.928375000,"event":{"timestamp":1771094272.928375000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094272.929345000,"event":{"timestamp":1771094272.929345000,"collectorName":"siteCollector","success":false,"durationMillis":83}}
+{"type":"AlertRaised","timestamp":1771094272.930352000,"event":{"timestamp":1771094272.930352000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094272.930847000,"event":{"timestamp":1771094272.930847000,"collectorName":"rssCollector","success":false,"durationMillis":84}}
+{"type":"CollectorTickStarted","timestamp":1771094302.845328000,"event":{"timestamp":1771094302.845328000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094302.924981000,"event":{"timestamp":1771094302.924981000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":72}}
+{"type":"AlertRaised","timestamp":1771094302.925820000,"event":{"timestamp":1771094302.925820000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094302.926583000,"event":{"timestamp":1771094302.926583000,"collectorName":"siteCollector","success":false,"durationMillis":81}}
+{"type":"CollectorTickStarted","timestamp":1771094332.847652000,"event":{"timestamp":1771094332.847652000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094332.847669000,"event":{"timestamp":1771094332.847669000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094332.847666000,"event":{"timestamp":1771094332.847666000,"collectorName":"siteCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094332.858741000,"event":{"timestamp":1771094332.858741000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094332.859169000,"event":{"timestamp":1771094332.859169000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771094332.859262000,"event":{"timestamp":1771094332.859262000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771094332.860330000,"event":{"timestamp":1771094332.860330000,"collectorName":"weatherCollector","success":true,"durationMillis":12}}
+{"type":"SiteFetched","timestamp":1771094332.933956000,"event":{"timestamp":1771094332.933956000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":77}}
+{"type":"AlertRaised","timestamp":1771094332.933879000,"event":{"timestamp":1771094332.933879000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094332.935247000,"event":{"timestamp":1771094332.935247000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094332.935966000,"event":{"timestamp":1771094332.935966000,"collectorName":"rssCollector","success":false,"durationMillis":88}}
+{"type":"CollectorTickCompleted","timestamp":1771094332.936507000,"event":{"timestamp":1771094332.936507000,"collectorName":"siteCollector","success":false,"durationMillis":88}}
+{"type":"CollectorTickStarted","timestamp":1771094362.843543000,"event":{"timestamp":1771094362.843543000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094362.957252000,"event":{"timestamp":1771094362.957252000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":106}}
+{"type":"AlertRaised","timestamp":1771094362.958745000,"event":{"timestamp":1771094362.958745000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094362.959844000,"event":{"timestamp":1771094362.959844000,"collectorName":"siteCollector","success":false,"durationMillis":116}}
+{"type":"CollectorTickStarted","timestamp":1771094426.854092000,"event":{"timestamp":1771094426.854092000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094426.854092000,"event":{"timestamp":1771094426.854092000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094426.854092000,"event":{"timestamp":1771094426.854092000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094426.864684000,"event":{"timestamp":1771094426.864684000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094426.865009000,"event":{"timestamp":1771094426.865009000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094426.865527000,"event":{"timestamp":1771094426.865527000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094426.869127000,"event":{"timestamp":1771094426.869127000,"collectorName":"weatherCollector","success":true,"durationMillis":15}}
+{"type":"SiteFetched","timestamp":1771094426.986119000,"event":{"timestamp":1771094426.986119000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":126}}
+{"type":"AlertRaised","timestamp":1771094426.986089000,"event":{"timestamp":1771094426.986089000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094426.986964000,"event":{"timestamp":1771094426.986964000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094426.987782000,"event":{"timestamp":1771094426.987782000,"collectorName":"rssCollector","success":false,"durationMillis":133}}
+{"type":"CollectorTickCompleted","timestamp":1771094426.989465000,"event":{"timestamp":1771094426.989465000,"collectorName":"siteCollector","success":false,"durationMillis":135}}
+{"type":"CollectorTickStarted","timestamp":1771094456.858023000,"event":{"timestamp":1771094456.858023000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094456.904011000,"event":{"timestamp":1771094456.904011000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":44}}
+{"type":"AlertRaised","timestamp":1771094456.904548000,"event":{"timestamp":1771094456.904548000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094456.904876000,"event":{"timestamp":1771094456.904876000,"collectorName":"siteCollector","success":false,"durationMillis":46}}
+{"type":"CollectorTickStarted","timestamp":1771094486.859518000,"event":{"timestamp":1771094486.859518000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094486.859715000,"event":{"timestamp":1771094486.859715000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094486.859766000,"event":{"timestamp":1771094486.859766000,"collectorName":"weatherCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094486.875161000,"event":{"timestamp":1771094486.875161000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"WeatherUpdated","timestamp":1771094486.876153000,"event":{"timestamp":1771094486.876153000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094486.876944000,"event":{"timestamp":1771094486.876944000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094486.878026000,"event":{"timestamp":1771094486.878026000,"collectorName":"weatherCollector","success":true,"durationMillis":18}}
+{"type":"SiteFetched","timestamp":1771094486.950663000,"event":{"timestamp":1771094486.950663000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":80}}
+{"type":"AlertRaised","timestamp":1771094486.950674000,"event":{"timestamp":1771094486.950674000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094486.951449000,"event":{"timestamp":1771094486.951449000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094486.951887000,"event":{"timestamp":1771094486.951887000,"collectorName":"rssCollector","success":false,"durationMillis":92}}
+{"type":"CollectorTickCompleted","timestamp":1771094486.952129000,"event":{"timestamp":1771094486.952129000,"collectorName":"siteCollector","success":false,"durationMillis":92}}
+{"type":"CollectorTickStarted","timestamp":1771094516.858976000,"event":{"timestamp":1771094516.858976000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094516.919024000,"event":{"timestamp":1771094516.919024000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":54}}
+{"type":"AlertRaised","timestamp":1771094516.920163000,"event":{"timestamp":1771094516.920163000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094516.920891000,"event":{"timestamp":1771094516.920891000,"collectorName":"siteCollector","success":false,"durationMillis":61}}
+{"type":"CollectorTickStarted","timestamp":1771094546.857047000,"event":{"timestamp":1771094546.857047000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094546.857110000,"event":{"timestamp":1771094546.857110000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094546.857002000,"event":{"timestamp":1771094546.857002000,"collectorName":"siteCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094546.868266000,"event":{"timestamp":1771094546.868266000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094546.869032000,"event":{"timestamp":1771094546.869032000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094546.869438000,"event":{"timestamp":1771094546.869438000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094546.874966000,"event":{"timestamp":1771094546.874966000,"collectorName":"weatherCollector","success":true,"durationMillis":17}}
+{"type":"SiteFetched","timestamp":1771094546.965807000,"event":{"timestamp":1771094546.965807000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":99}}
+{"type":"AlertRaised","timestamp":1771094546.966255000,"event":{"timestamp":1771094546.966255000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094546.966692000,"event":{"timestamp":1771094546.966692000,"collectorName":"siteCollector","success":false,"durationMillis":109}}
+{"type":"AlertRaised","timestamp":1771094546.973581000,"event":{"timestamp":1771094546.973581000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094546.973848000,"event":{"timestamp":1771094546.973848000,"collectorName":"rssCollector","success":false,"durationMillis":116}}
+{"type":"CollectorTickStarted","timestamp":1771094576.858997000,"event":{"timestamp":1771094576.858997000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094576.940775000,"event":{"timestamp":1771094576.940775000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":77}}
+{"type":"AlertRaised","timestamp":1771094576.942418000,"event":{"timestamp":1771094576.942418000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094576.943543000,"event":{"timestamp":1771094576.943543000,"collectorName":"siteCollector","success":false,"durationMillis":84}}
+{"type":"CollectorTickStarted","timestamp":1771094606.853957000,"event":{"timestamp":1771094606.853957000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094606.854051000,"event":{"timestamp":1771094606.854051000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094606.854683000,"event":{"timestamp":1771094606.854683000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094606.871294000,"event":{"timestamp":1771094606.871294000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094606.871844000,"event":{"timestamp":1771094606.871844000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094606.871927000,"event":{"timestamp":1771094606.871927000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094606.873484000,"event":{"timestamp":1771094606.873484000,"collectorName":"weatherCollector","success":true,"durationMillis":19}}
+{"type":"AlertRaised","timestamp":1771094606.974329000,"event":{"timestamp":1771094606.974329000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094606.975903000,"event":{"timestamp":1771094606.975903000,"collectorName":"rssCollector","success":false,"durationMillis":121}}
+{"type":"SiteFetched","timestamp":1771094606.976756000,"event":{"timestamp":1771094606.976756000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":107}}
+{"type":"AlertRaised","timestamp":1771094606.977449000,"event":{"timestamp":1771094606.977449000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094606.978920000,"event":{"timestamp":1771094606.978920000,"collectorName":"siteCollector","success":false,"durationMillis":124}}
+{"type":"CollectorTickStarted","timestamp":1771094636.858754000,"event":{"timestamp":1771094636.858754000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094636.940824000,"event":{"timestamp":1771094636.940824000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":76}}
+{"type":"AlertRaised","timestamp":1771094636.942340000,"event":{"timestamp":1771094636.942340000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094636.943731000,"event":{"timestamp":1771094636.943731000,"collectorName":"siteCollector","success":false,"durationMillis":84}}
+{"type":"CollectorTickStarted","timestamp":1771094666.859177000,"event":{"timestamp":1771094666.859177000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094666.859509000,"event":{"timestamp":1771094666.859509000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094666.859420000,"event":{"timestamp":1771094666.859420000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094666.866893000,"event":{"timestamp":1771094666.866893000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094666.867951000,"event":{"timestamp":1771094666.867951000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771094666.868433000,"event":{"timestamp":1771094666.868433000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771094666.870063000,"event":{"timestamp":1771094666.870063000,"collectorName":"weatherCollector","success":true,"durationMillis":10}}
+{"type":"AlertRaised","timestamp":1771094666.940522000,"event":{"timestamp":1771094666.940522000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"SiteFetched","timestamp":1771094666.940586000,"event":{"timestamp":1771094666.940586000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":76}}
+{"type":"CollectorTickCompleted","timestamp":1771094666.942547000,"event":{"timestamp":1771094666.942547000,"collectorName":"rssCollector","success":false,"durationMillis":83}}
+{"type":"AlertRaised","timestamp":1771094666.942571000,"event":{"timestamp":1771094666.942571000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094666.943870000,"event":{"timestamp":1771094666.943870000,"collectorName":"siteCollector","success":false,"durationMillis":84}}
+{"type":"CollectorTickStarted","timestamp":1771094696.859133000,"event":{"timestamp":1771094696.859133000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094696.934986000,"event":{"timestamp":1771094696.934986000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":71}}
+{"type":"AlertRaised","timestamp":1771094696.937947000,"event":{"timestamp":1771094696.937947000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094696.942475000,"event":{"timestamp":1771094696.942475000,"collectorName":"siteCollector","success":false,"durationMillis":83}}
+{"type":"CollectorTickStarted","timestamp":1771094726.860649000,"event":{"timestamp":1771094726.860649000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094726.863828000,"event":{"timestamp":1771094726.863828000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094726.865899000,"event":{"timestamp":1771094726.865899000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094726.911280000,"event":{"timestamp":1771094726.911280000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"AlertRaised","timestamp":1771094726.913371000,"event":{"timestamp":1771094726.913371000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"WeatherUpdated","timestamp":1771094726.917125000,"event":{"timestamp":1771094726.917125000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"CollectorTickCompleted","timestamp":1771094726.920293000,"event":{"timestamp":1771094726.920293000,"collectorName":"weatherCollector","success":true,"durationMillis":56}}
+{"type":"SiteFetched","timestamp":1771094726.998715000,"event":{"timestamp":1771094726.998715000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":110}}
+{"type":"AlertRaised","timestamp":1771094726.998700000,"event":{"timestamp":1771094726.998700000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094726.999763000,"event":{"timestamp":1771094726.999763000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094727.000323000,"event":{"timestamp":1771094727.000323000,"collectorName":"rssCollector","success":false,"durationMillis":134}}
+{"type":"CollectorTickCompleted","timestamp":1771094727.000631000,"event":{"timestamp":1771094727.000631000,"collectorName":"siteCollector","success":false,"durationMillis":139}}
+{"type":"CollectorTickStarted","timestamp":1771094756.857128000,"event":{"timestamp":1771094756.857128000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094756.921547000,"event":{"timestamp":1771094756.921547000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":60}}
+{"type":"AlertRaised","timestamp":1771094756.923861000,"event":{"timestamp":1771094756.923861000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094756.924663000,"event":{"timestamp":1771094756.924663000,"collectorName":"siteCollector","success":false,"durationMillis":67}}
+{"type":"CollectorTickStarted","timestamp":1771094786.858575000,"event":{"timestamp":1771094786.858575000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094786.858657000,"event":{"timestamp":1771094786.858657000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094786.858626000,"event":{"timestamp":1771094786.858626000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094786.866709000,"event":{"timestamp":1771094786.866709000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094786.868405000,"event":{"timestamp":1771094786.868405000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094786.868745000,"event":{"timestamp":1771094786.868745000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094786.871493000,"event":{"timestamp":1771094786.871493000,"collectorName":"weatherCollector","success":true,"durationMillis":12}}
+{"type":"SiteFetched","timestamp":1771094786.947904000,"event":{"timestamp":1771094786.947904000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":84}}
+{"type":"AlertRaised","timestamp":1771094786.947894000,"event":{"timestamp":1771094786.947894000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094786.949014000,"event":{"timestamp":1771094786.949014000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094786.949464000,"event":{"timestamp":1771094786.949464000,"collectorName":"rssCollector","success":false,"durationMillis":90}}
+{"type":"CollectorTickCompleted","timestamp":1771094786.949734000,"event":{"timestamp":1771094786.949734000,"collectorName":"siteCollector","success":false,"durationMillis":91}}
+{"type":"CollectorTickStarted","timestamp":1771094816.859932000,"event":{"timestamp":1771094816.859932000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094816.921070000,"event":{"timestamp":1771094816.921070000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":58}}
+{"type":"AlertRaised","timestamp":1771094816.922497000,"event":{"timestamp":1771094816.922497000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094816.923631000,"event":{"timestamp":1771094816.923631000,"collectorName":"siteCollector","success":false,"durationMillis":63}}
+{"type":"CollectorTickStarted","timestamp":1771094846.861222000,"event":{"timestamp":1771094846.861222000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094846.863411000,"event":{"timestamp":1771094846.863411000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094846.863300000,"event":{"timestamp":1771094846.863300000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094846.890134000,"event":{"timestamp":1771094846.890134000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094846.890802000,"event":{"timestamp":1771094846.890802000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094846.891023000,"event":{"timestamp":1771094846.891023000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094846.894303000,"event":{"timestamp":1771094846.894303000,"collectorName":"weatherCollector","success":true,"durationMillis":30}}
+{"type":"SiteFetched","timestamp":1771094846.999900000,"event":{"timestamp":1771094846.999900000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":115}}
+{"type":"AlertRaised","timestamp":1771094847.000892000,"event":{"timestamp":1771094847.000892000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094847.001555000,"event":{"timestamp":1771094847.001555000,"collectorName":"siteCollector","success":false,"durationMillis":140}}
+{"type":"AlertRaised","timestamp":1771094847.002055000,"event":{"timestamp":1771094847.002055000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094847.002932000,"event":{"timestamp":1771094847.002932000,"collectorName":"rssCollector","success":false,"durationMillis":139}}
+{"type":"CollectorTickStarted","timestamp":1771094876.861397000,"event":{"timestamp":1771094876.861397000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094876.923206000,"event":{"timestamp":1771094876.923206000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":59}}
+{"type":"AlertRaised","timestamp":1771094876.924788000,"event":{"timestamp":1771094876.924788000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094876.926055000,"event":{"timestamp":1771094876.926055000,"collectorName":"siteCollector","success":false,"durationMillis":64}}
+{"type":"CollectorTickStarted","timestamp":1771094906.859499000,"event":{"timestamp":1771094906.859499000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094906.859413000,"event":{"timestamp":1771094906.859413000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094906.859477000,"event":{"timestamp":1771094906.859477000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094906.866424000,"event":{"timestamp":1771094906.866424000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094906.867009000,"event":{"timestamp":1771094906.867009000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094906.867248000,"event":{"timestamp":1771094906.867248000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094906.868521000,"event":{"timestamp":1771094906.868521000,"collectorName":"weatherCollector","success":true,"durationMillis":9}}
+{"type":"SiteFetched","timestamp":1771094906.955500000,"event":{"timestamp":1771094906.955500000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":90}}
+{"type":"AlertRaised","timestamp":1771094906.955481000,"event":{"timestamp":1771094906.955481000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094906.956837000,"event":{"timestamp":1771094906.956837000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094906.957519000,"event":{"timestamp":1771094906.957519000,"collectorName":"rssCollector","success":false,"durationMillis":98}}
+{"type":"CollectorTickCompleted","timestamp":1771094906.958521000,"event":{"timestamp":1771094906.958521000,"collectorName":"siteCollector","success":false,"durationMillis":99}}
+{"type":"CollectorTickStarted","timestamp":1771094936.860602000,"event":{"timestamp":1771094936.860602000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094936.930024000,"event":{"timestamp":1771094936.930024000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":65}}
+{"type":"AlertRaised","timestamp":1771094936.930914000,"event":{"timestamp":1771094936.930914000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094936.931941000,"event":{"timestamp":1771094936.931941000,"collectorName":"siteCollector","success":false,"durationMillis":71}}
+{"type":"CollectorTickStarted","timestamp":1771094966.862218000,"event":{"timestamp":1771094966.862218000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094966.863962000,"event":{"timestamp":1771094966.863962000,"collectorName":"weatherCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771094966.864824000,"event":{"timestamp":1771094966.864824000,"collectorName":"rssCollector"}}
+{"type":"WeatherUpdated","timestamp":1771094966.872868000,"event":{"timestamp":1771094966.872868000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771094966.873346000,"event":{"timestamp":1771094966.873346000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771094966.873706000,"event":{"timestamp":1771094966.873706000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094966.874582000,"event":{"timestamp":1771094966.874582000,"collectorName":"weatherCollector","success":true,"durationMillis":10}}
+{"type":"SiteFetched","timestamp":1771094966.938470000,"event":{"timestamp":1771094966.938470000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":68}}
+{"type":"AlertRaised","timestamp":1771094966.938450000,"event":{"timestamp":1771094966.938450000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"AlertRaised","timestamp":1771094966.939889000,"event":{"timestamp":1771094966.939889000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094966.940511000,"event":{"timestamp":1771094966.940511000,"collectorName":"rssCollector","success":false,"durationMillis":75}}
+{"type":"CollectorTickCompleted","timestamp":1771094966.940895000,"event":{"timestamp":1771094966.940895000,"collectorName":"siteCollector","success":false,"durationMillis":78}}
+{"type":"CollectorTickStarted","timestamp":1771094996.860834000,"event":{"timestamp":1771094996.860834000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771094996.927258000,"event":{"timestamp":1771094996.927258000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":64}}
+{"type":"AlertRaised","timestamp":1771094996.928490000,"event":{"timestamp":1771094996.928490000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771094996.929549000,"event":{"timestamp":1771094996.929549000,"collectorName":"siteCollector","success":false,"durationMillis":68}}
+{"type":"CollectorTickStarted","timestamp":1771095026.857366000,"event":{"timestamp":1771095026.857366000,"collectorName":"rssCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771095026.857313000,"event":{"timestamp":1771095026.857313000,"collectorName":"siteCollector"}}
+{"type":"CollectorTickStarted","timestamp":1771095026.857370000,"event":{"timestamp":1771095026.857370000,"collectorName":"weatherCollector"}}
+{"type":"WeatherUpdated","timestamp":1771095026.863342000,"event":{"timestamp":1771095026.863342000,"location":"Boston","tempF":42.0,"conditions":"Cloudy"}}
+{"type":"WeatherUpdated","timestamp":1771095026.863814000,"event":{"timestamp":1771095026.863814000,"location":"Seattle","tempF":51.0,"conditions":"Rain"}}
+{"type":"AlertRaised","timestamp":1771095026.863862000,"event":{"timestamp":1771095026.863862000,"category":"weather_alert","message":"Storm watch","details":{"location":"Boston"}}}
+{"type":"CollectorTickCompleted","timestamp":1771095026.865252000,"event":{"timestamp":1771095026.865252000,"collectorName":"weatherCollector","success":true,"durationMillis":7}}
+{"type":"SiteFetched","timestamp":1771095026.922111000,"event":{"timestamp":1771095026.922111000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":60}}
+{"type":"AlertRaised","timestamp":1771095026.923687000,"event":{"timestamp":1771095026.923687000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771095026.924563000,"event":{"timestamp":1771095026.924563000,"collectorName":"siteCollector","success":false,"durationMillis":67}}
+{"type":"AlertRaised","timestamp":1771095026.928585000,"event":{"timestamp":1771095026.928585000,"category":"collector","message":"RSS fetch failed for example-rss: unable to find valid certification path to requested target","details":{"source":"example-rss","collector":"rssCollector","url":"https://example.com/feed.xml"}}}
+{"type":"CollectorTickCompleted","timestamp":1771095026.929700000,"event":{"timestamp":1771095026.929700000,"collectorName":"rssCollector","success":false,"durationMillis":72}}
+{"type":"CollectorTickStarted","timestamp":1771095056.862100000,"event":{"timestamp":1771095056.862100000,"collectorName":"siteCollector"}}
+{"type":"SiteFetched","timestamp":1771095056.927302000,"event":{"timestamp":1771095056.927302000,"siteId":"example-home","url":"https://example.com","status":0,"durationMillis":61}}
+{"type":"AlertRaised","timestamp":1771095056.929204000,"event":{"timestamp":1771095056.929204000,"category":"collector","message":"Fetch failure for https://example.com: unable to find valid certification path to requested target","details":{"siteId":"example-home","collector":"siteCollector","url":"https://example.com"}}}
+{"type":"CollectorTickCompleted","timestamp":1771095056.930784000,"event":{"timestamp":1771095056.930784000,"collectorName":"siteCollector","success":false,"durationMillis":68}}

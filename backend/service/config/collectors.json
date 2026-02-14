@@ -1,0 +1,20 @@
+[
+  {
+    "name": "siteCollector",
+    "enabled": true,
+    "intervalSeconds": 30,
+    "params": {}
+  },
+  {
+    "name": "rssCollector",
+    "enabled": true,
+    "intervalSeconds": 60,
+    "params": {}
+  },
+  {
+    "name": "weatherCollector",
+    "enabled": true,
+    "intervalSeconds": 60,
+    "params": {}
+  }
+]

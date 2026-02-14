@@ -1,0 +1,11 @@
+{
+  "interval": "PT30S",
+  "sites": [
+    {
+      "id": "example-home",
+      "url": "https://example.com",
+      "tags": ["sample", "public"],
+      "parseMode": "TITLE"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "interval": "PT60S",
+  "topStories": 5,
+  "keywords": ["storm", "breaking"],
+  "sources": [
+    {
+      "source": "example-rss",
+      "url": "https://example.com/feed.xml"
+    }
+  ]
+}

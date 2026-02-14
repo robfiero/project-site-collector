@@ -1,0 +1,20 @@
+{
+  "sites" : { },
+  "news" : { },
+  "weather" : {
+    "Seattle" : {
+      "location" : "Seattle",
+      "tempF" : 51.0,
+      "conditions" : "Rain",
+      "alerts" : [ ],
+      "updatedAt" : 1771095026.862248000
+    },
+    "Boston" : {
+      "location" : "Boston",
+      "tempF" : 42.0,
+      "conditions" : "Cloudy",
+      "alerts" : [ "Storm watch" ],
+      "updatedAt" : 1771095026.862043000
+    }
+  }
+}

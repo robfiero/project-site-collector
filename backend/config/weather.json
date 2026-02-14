@@ -1,0 +1,4 @@
+{
+  "interval": "PT60S",
+  "locations": ["Boston", "Seattle"]
+}
