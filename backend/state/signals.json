@@ -1,20 +1,51 @@
 {
   "sites" : { },
-  "news" : { },
+  "news" : {
+    "bbc-news" : {
+      "source" : "bbc-news",
+      "stories" : [ {
+        "title" : "Pereira announced as Forest boss on 18-month deal",
+        "link" : "https://www.bbc.com/sport/football/articles/c62678ldqmpo?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771161148.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "'The best ever!' Klaebo wins historic ninth Winter Olympics gold",
+        "link" : "https://www.bbc.com/sport/videos/cjd9e2ddzrmo?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771160465.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "Norway's Klaebo wins record ninth gold",
+        "link" : "https://www.bbc.com/sport/articles/cy4wmyjnlz1o?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771159357.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "UK wants action taken on Russia after Navalny frog poisoning, Cooper says",
+        "link" : "https://www.bbc.com/news/articles/c8r15e4ek2vo?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771158386.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "GB curlers sweep aside Germany to edge closer to semis",
+        "link" : "https://www.bbc.com/sport/articles/c15xzvll0vzo?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771157678.000000000,
+        "source" : "bbc-news"
+      } ],
+      "updatedAt" : 1771164086.686390000
+    }
+  },
   "weather" : {
     "Seattle" : {
       "location" : "Seattle",
       "tempF" : 51.0,
       "conditions" : "Rain",
       "alerts" : [ ],
-      "updatedAt" : 1771095026.862248000
+      "updatedAt" : 1771164086.426595000
     },
     "Boston" : {
       "location" : "Boston",
       "tempF" : 42.0,
       "conditions" : "Cloudy",
       "alerts" : [ "Storm watch" ],
-      "updatedAt" : 1771095026.862043000
+      "updatedAt" : 1771164086.426204000
     }
   }
 }

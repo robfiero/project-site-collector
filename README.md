@@ -121,6 +121,43 @@ Run these after starting backend (default `http://localhost:8080`):
 - `curl -sS "http://localhost:8080/api/events?limit=10"`
 - `curl -N --max-time 5 http://localhost:8080/api/stream`
 
+## TLS Diagnostics and Truststore
+
+If Java HttpClient reports certificate path errors (for example `PKIX path building failed`), use the built-in TLS checker:
+
+- `cd backend && mvn -pl service -am -DskipTests exec:java -Dexec.mainClass=com.signalsentinel.service.tls.TlsCheckMain -Dexec.args="https://example.com"`
+
+What it prints:
+- Presented certificate chain (subject + issuer per certificate)
+- Whether that chain validates against the default JVM truststore
+
+Optional custom truststore for backend collectors:
+- `TRUSTSTORE_PATH` (path to `.jks` or `.p12`/`.pfx`/`.pkcs12`)
+- `TRUSTSTORE_PASSWORD` (required when `TRUSTSTORE_PATH` is set)
+
+Example run:
+
+```bash
+cd backend
+TRUSTSTORE_PATH=/path/to/custom-truststore.p12 \
+TRUSTSTORE_PASSWORD=changeit \
+./run-service.sh
+```
+
+Create a truststore containing a server certificate (example):
+
+```bash
+keytool -importcert \
+  -alias target-cert \
+  -file /path/to/server-cert.pem \
+  -keystore /path/to/custom-truststore.p12 \
+  -storetype PKCS12
+```
+
+The backend keeps secure defaults:
+- no trust-all SSL context
+- no hostname verification bypass
+
 ## Notes on Java 25 Preview
 
 This project is configured for preview APIs (Structured Concurrency) across:
@@ -142,8 +179,8 @@ Where reports are generated:
   - `backend/collectors/target/site/jacoco/index.html`
   - `backend/service/target/site/jacoco/index.html`
 
-Latest coverage snapshot (from `mvn clean verify` on February 12, 2026):
+Latest coverage snapshot (from `mvn clean verify` on February 15, 2026):
 
 - `core`: instruction 96.6%, line 97.5%
-- `collectors`: instruction 90.0%, line 91.0%
-- `service`: instruction 80.3%, line 77.9%
+- `collectors`: instruction 89.7%, line 91.0%
+- `service`: instruction 72.1%, line 68.5%

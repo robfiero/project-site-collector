@@ -14,12 +14,12 @@ import com.signalsentinel.core.model.CollectorConfig;
 import com.signalsentinel.service.api.ApiServer;
 import com.signalsentinel.service.api.SseBroadcaster;
 import com.signalsentinel.service.config.ConfigLoader;
+import com.signalsentinel.service.http.HttpClientFactory;
 import com.signalsentinel.service.runtime.SchedulerService;
 import com.signalsentinel.service.store.EventCodec;
 import com.signalsentinel.service.store.JsonFileSignalStore;
 import com.signalsentinel.service.store.JsonlEventStore;
 
-import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -67,7 +67,7 @@ public final class Main {
         );
 
         CollectorContext context = new CollectorContext(
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
+                HttpClientFactory.create(Duration.ofSeconds(5)),
                 eventBus,
                 signalStore,
                 Clock.systemUTC(),

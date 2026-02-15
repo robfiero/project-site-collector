@@ -1,13 +1,17 @@
 package com.signalsentinel.service.store;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.signalsentinel.core.model.NewsSignal;
+import com.signalsentinel.core.model.NewsStory;
 import com.signalsentinel.core.model.SiteSignal;
+import com.signalsentinel.core.model.WeatherSignal;
 import com.signalsentinel.core.util.JsonUtils;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -224,5 +228,59 @@ class JsonFileSignalStoreTest {
                 ))
         );
         assertTrue(ex.getMessage().contains("Failed writing signals"));
+    }
+
+    @Test
+    void putNewsAndWeatherRoundTrip() throws Exception {
+        Path tempDir = Files.createTempDirectory("signal-store-news-weather-");
+        Path file = tempDir.resolve("state/signals.json");
+
+        JsonFileSignalStore store = new JsonFileSignalStore(file);
+        NewsSignal newsSignal = new NewsSignal(
+                "feed",
+                List.of(new NewsStory("headline", "https://example.com/news", Instant.parse("2026-02-15T00:00:00Z"), "feed")),
+                Instant.parse("2026-02-15T00:00:05Z")
+        );
+        WeatherSignal weatherSignal = new WeatherSignal(
+                "Boston",
+                38.5,
+                "Cloudy",
+                List.of("wind advisory"),
+                Instant.parse("2026-02-15T00:00:10Z")
+        );
+
+        store.putNews(newsSignal);
+        store.putWeather(weatherSignal);
+
+        JsonFileSignalStore reloaded = new JsonFileSignalStore(file);
+        Map<String, Object> all = reloaded.getAllSignals();
+        assertEquals(newsSignal, ((Map<String, NewsSignal>) all.get("news")).get("feed"));
+        assertEquals(weatherSignal, ((Map<String, WeatherSignal>) all.get("weather")).get("Boston"));
+    }
+
+    @Test
+    void loadHandlesNullSectionsInSnapshotFile() throws Exception {
+        Path tempDir = Files.createTempDirectory("signal-store-null-sections-");
+        Path file = tempDir.resolve("state/signals.json");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, """
+                {
+                  "sites": null,
+                  "news": {
+                    "feed": {
+                      "source": "feed",
+                      "stories": [],
+                      "updatedAt": "2026-02-15T00:00:00Z"
+                    }
+                  },
+                  "weather": null
+                }
+                """);
+
+        JsonFileSignalStore store = new JsonFileSignalStore(file);
+        Map<String, Object> all = store.getAllSignals();
+        assertEquals(0, ((Map<?, ?>) all.get("sites")).size());
+        assertEquals(1, ((Map<?, ?>) all.get("news")).size());
+        assertEquals(0, ((Map<?, ?>) all.get("weather")).size());
     }
 }
