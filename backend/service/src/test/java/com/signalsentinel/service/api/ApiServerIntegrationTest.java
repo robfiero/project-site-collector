@@ -3,6 +3,7 @@ package com.signalsentinel.service.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.signalsentinel.core.bus.EventBus;
 import com.signalsentinel.core.events.AlertRaised;
+import com.signalsentinel.core.events.CollectorTickCompleted;
 import com.signalsentinel.core.events.NewsUpdated;
 import com.signalsentinel.core.model.SiteSignal;
 import com.signalsentinel.core.util.JsonUtils;
@@ -25,6 +26,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -196,6 +198,116 @@ class ApiServerIntegrationTest {
         assertEquals(2, body.size());
         assertEquals("siteCollector", body.get(0).get("name").asText());
         assertEquals(15, body.get(0).get("intervalSeconds").asInt());
+    }
+
+    @Test
+    void metricsEndpointReturnsRequiredFieldsAndUpdatesFromEvents() throws Exception {
+        TestRuntime runtime = startRuntime(List.of(testCollector("siteCollector", 15)));
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> before = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/metrics")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, before.statusCode());
+        JsonNode beforeJson = JsonUtils.objectMapper().readTree(before.body());
+        assertTrue(beforeJson.has("sseClientsConnected"));
+        assertTrue(beforeJson.has("eventsEmittedTotal"));
+        assertTrue(beforeJson.has("recentEventsPerMinute"));
+        assertTrue(beforeJson.has("collectors"));
+
+        runtime.eventBus().publish(new CollectorTickCompleted(
+                Instant.parse("2026-02-12T20:05:00Z"),
+                "siteCollector",
+                true,
+                250
+        ));
+        runtime.eventBus().publish(new AlertRaised(
+                Instant.parse("2026-02-12T20:05:01Z"),
+                "collector",
+                "collector warning",
+                Map.of("collector", "siteCollector")
+        ));
+
+        HttpResponse<String> after = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/metrics")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, after.statusCode());
+        JsonNode afterJson = JsonUtils.objectMapper().readTree(after.body());
+        assertTrue(afterJson.get("eventsEmittedTotal").asLong() >= 2);
+        assertTrue(afterJson.get("recentEventsPerMinute").asInt() >= 2);
+        JsonNode collectorStatus = afterJson.get("collectors").get("siteCollector");
+        assertNotNull(collectorStatus);
+        assertEquals(true, collectorStatus.get("lastSuccess").asBoolean());
+        assertEquals(250, collectorStatus.get("lastDurationMillis").asInt());
+    }
+
+    @Test
+    void collectorsStatusEndpointReflectsCollectorTickEvents() throws Exception {
+        TestRuntime runtime = startRuntime(List.of(testCollector("rssCollector", 60)));
+        HttpClient client = HttpClient.newHttpClient();
+
+        runtime.eventBus().publish(new CollectorTickCompleted(
+                Instant.parse("2026-02-12T20:06:00Z"),
+                "rssCollector",
+                false,
+                500
+        ));
+        runtime.eventBus().publish(new AlertRaised(
+                Instant.parse("2026-02-12T20:06:01Z"),
+                "collector",
+                "rss failed",
+                Map.of("collector", "rssCollector")
+        ));
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/collectors/status")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, response.statusCode());
+        JsonNode json = JsonUtils.objectMapper().readTree(response.body());
+        assertTrue(json.has("rssCollector"));
+        JsonNode status = json.get("rssCollector");
+        assertEquals(false, status.get("lastSuccess").asBoolean());
+        assertEquals(500, status.get("lastDurationMillis").asInt());
+        assertTrue(status.get("lastErrorMessage").asText().contains("rss failed"));
+    }
+
+    @Test
+    void catalogDefaultsEndpointReturnsStableDefaults() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/catalog/defaults")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, response.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(response.body());
+        assertTrue(body.has("defaultZipCodes"));
+        assertTrue(body.has("defaultNewsSources"));
+        assertTrue(body.has("defaultWatchlist"));
+        assertTrue(body.get("defaultWatchlist").isArray());
+    }
+
+    @Test
+    void configEndpointReturnsSanitizedConfigView() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/config")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, response.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(response.body());
+        assertTrue(body.has("collectors"));
+        assertTrue(body.has("sites"));
+        assertTrue(body.has("rss"));
+        assertTrue(body.has("weather"));
     }
 
     @Test
@@ -444,7 +556,19 @@ class ApiServerIntegrationTest {
         EventCodec.subscribeAll(eventBus, eventStore::append);
 
         SseBroadcaster broadcaster = new SseBroadcaster(eventBus);
-        apiServer = new ApiServer(0, signalStore, eventStore, broadcaster, collectors);
+        DiagnosticsTracker diagnosticsTracker = new DiagnosticsTracker(eventBus, Clock.systemUTC(), broadcaster::clientCount);
+        Map<String, Object> defaults = Map.of(
+                "defaultZipCodes", List.of("02108", "98101"),
+                "defaultNewsSources", List.of(Map.of("id", "demo", "name", "Demo", "url", "https://example.com/feed", "category", "general")),
+                "defaultWatchlist", List.of("AAPL", "MSFT", "BTC-USD")
+        );
+        Map<String, Object> config = Map.of(
+                "collectors", List.of(),
+                "sites", Map.of("interval", "PT30S", "sites", List.of()),
+                "rss", Map.of("interval", "PT60S", "sources", List.of()),
+                "weather", Map.of("interval", "PT60S", "locations", List.of())
+        );
+        apiServer = new ApiServer(0, signalStore, eventStore, broadcaster, collectors, diagnosticsTracker, defaults, config);
         apiServer.start();
 
         return new TestRuntime(apiServer.actualPort(), signalStore, eventStore, eventBus, broadcaster);

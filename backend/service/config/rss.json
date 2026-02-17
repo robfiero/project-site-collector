@@ -4,8 +4,8 @@
   "keywords": ["storm", "breaking"],
   "sources": [
     {
-      "source": "bbc-news",
-      "url": "https://feeds.bbci.co.uk/news/rss.xml"
+      "source": "mozilla-blog",
+      "url": "https://blog.mozilla.org/feed/"
     }
   ]
 }

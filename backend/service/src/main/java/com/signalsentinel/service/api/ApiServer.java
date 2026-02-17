@@ -23,11 +23,16 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 
 public class ApiServer {
+    private static final DiagnosticsTracker EMPTY_DIAGNOSTICS = DiagnosticsTracker.empty();
+
     private final int port;
     private final ServiceSignalStore signalStore;
     private final EventStore eventStore;
     private final SseBroadcaster sseBroadcaster;
     private final List<Collector> collectors;
+    private final DiagnosticsTracker diagnosticsTracker;
+    private final Map<String, Object> catalogDefaults;
+    private final Map<String, Object> configView;
 
     private HttpServer server;
 
@@ -38,11 +43,36 @@ public class ApiServer {
             SseBroadcaster sseBroadcaster,
             List<Collector> collectors
     ) {
+        this(
+                port,
+                signalStore,
+                eventStore,
+                sseBroadcaster,
+                collectors,
+                null,
+                Map.of(),
+                Map.of()
+        );
+    }
+
+    public ApiServer(
+            int port,
+            ServiceSignalStore signalStore,
+            EventStore eventStore,
+            SseBroadcaster sseBroadcaster,
+            List<Collector> collectors,
+            DiagnosticsTracker diagnosticsTracker,
+            Map<String, Object> catalogDefaults,
+            Map<String, Object> configView
+    ) {
         this.port = port;
         this.signalStore = signalStore;
         this.eventStore = eventStore;
         this.sseBroadcaster = sseBroadcaster;
         this.collectors = collectors;
+        this.diagnosticsTracker = diagnosticsTracker;
+        this.catalogDefaults = catalogDefaults;
+        this.configView = configView;
     }
 
     public void start() {
@@ -53,6 +83,10 @@ public class ApiServer {
             server.createContext("/api/signals", this::handleSignals);
             server.createContext("/api/events", this::handleEvents);
             server.createContext("/api/collectors", this::handleCollectors);
+            server.createContext("/api/collectors/status", this::handleCollectorStatus);
+            server.createContext("/api/metrics", this::handleMetrics);
+            server.createContext("/api/catalog/defaults", this::handleCatalogDefaults);
+            server.createContext("/api/config", this::handleConfig);
             server.createContext("/api/stream", sseBroadcaster::handle);
             server.start();
         } catch (IOException e) {
@@ -123,6 +157,34 @@ public class ApiServer {
         writeJson(exchange, 200, dto);
     }
 
+    private void handleCollectorStatus(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        writeJson(exchange, 200, diagnostics().collectorsSnapshot());
+    }
+
+    private void handleMetrics(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        writeJson(exchange, 200, diagnostics().metricsSnapshot());
+    }
+
+    private void handleCatalogDefaults(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        writeJson(exchange, 200, catalogDefaults);
+    }
+
+    private void handleConfig(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        writeJson(exchange, 200, configView);
+    }
+
     private boolean ensureGet(HttpExchange exchange, boolean corsEnabled) throws IOException {
         if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
             if (corsEnabled) {
@@ -165,5 +227,9 @@ public class ApiServer {
             query.put(key, value);
         }
         return query;
+    }
+
+    private DiagnosticsTracker diagnostics() {
+        return diagnosticsTracker != null ? diagnosticsTracker : EMPTY_DIAGNOSTICS;
     }
 }

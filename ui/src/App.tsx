@@ -1,29 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { fetchEvents, fetchHealth, fetchSignals } from './api';
-import { filterEvents, normalizeEventEnvelope, summarizeEvent } from './eventFeed';
-import { epochSecondsToDate, formatEpochSecondsDateTime, formatEpochSecondsTime } from './utils/date';
+import {
+  fetchCatalogDefaults,
+  fetchCollectorStatus,
+  fetchConfigView,
+  fetchEvents,
+  fetchHealth,
+  fetchMetrics,
+  fetchSignals
+} from './api';
+import { demoAirQuality, demoLocalHappenings, demoQuote } from './demoData';
+import { filterEvents, normalizeEventEnvelope } from './eventFeed';
+import { formatPlaceLabel } from './places';
+import AdminDashboard from './admin/AdminDashboard';
 import type {
-  AlertRaisedEvent,
-  CollectorTickCompletedEvent,
-  CollectorTickStartedEvent,
-  ContentChangedEvent,
+  AirQualitySignal,
+  CatalogDefaults,
+  CollectorStatus,
   EventEnvelope,
-  NewsUpdatedEvent,
+  LocalHappeningsSignal,
+  MarketQuoteSignal,
+  MetricsResponse,
   SignalsSnapshot,
-  SiteFetchedEvent,
-  WeatherUpdatedEvent
+  WeatherSignal
 } from './models';
+import { loadWatchlist, loadZipCodes, saveWatchlist, saveZipCodes } from './preferences';
 
 const MAX_EVENTS = 200;
-
-const emptySnapshot: SignalsSnapshot = {
-  sites: {},
-  news: {},
-  weather: {}
-};
-
-type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
+const FALLBACK_DEFAULT_ZIPS = ['02108', '98101'];
+const FALLBACK_DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
 const KNOWN_SSE_TYPES = [
   'CollectorTickStarted',
   'CollectorTickCompleted',
@@ -34,38 +39,78 @@ const KNOWN_SSE_TYPES = [
   'NewsUpdated'
 ] as const;
 
+type RouteName = 'home' | 'settings' | 'admin';
+type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
+
+const emptySnapshot: SignalsSnapshot = { sites: {}, news: {}, weather: {} };
+const emptyDefaults: CatalogDefaults = { defaultZipCodes: [], defaultNewsSources: [], defaultWatchlist: [] };
+const emptyMetrics: MetricsResponse = { sseClientsConnected: 0, eventsEmittedTotal: 0, recentEventsPerMinute: 0, collectors: {} };
+
 export default function App() {
+  const [route, setRoute] = useState<RouteName>(readRouteFromHash());
   const [health, setHealth] = useState<string>('unknown');
   const [snapshot, setSnapshot] = useState<SignalsSnapshot>(emptySnapshot);
   const [events, setEvents] = useState<EventEnvelope[]>([]);
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
+  const [eventFeedPaused, setEventFeedPaused] = useState<boolean>(false);
+  const [pausedEventBuffer, setPausedEventBuffer] = useState<EventEnvelope[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  const [metrics, setMetrics] = useState<MetricsResponse>(emptyMetrics);
+  const [metricsUpdatedAt, setMetricsUpdatedAt] = useState<number>(Date.now());
+  const [collectorStatus, setCollectorStatus] = useState<Record<string, CollectorStatus>>({});
+  const [catalogDefaults, setCatalogDefaults] = useState<CatalogDefaults>(emptyDefaults);
+  const [configView, setConfigView] = useState<Record<string, unknown>>({});
+  const [zipCodes, setZipCodes] = useState<string[]>(loadZipCodes());
+  const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist());
+  const [zipInput, setZipInput] = useState<string>('');
+  const [symbolInput, setSymbolInput] = useState<string>('');
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const retryDelayRef = useRef<number>(1000);
+  const pausedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(readRouteFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    saveZipCodes(zipCodes);
+  }, [zipCodes]);
+
+  useEffect(() => {
+    saveWatchlist(watchlist);
+  }, [watchlist]);
 
   useEffect(() => {
     let mounted = true;
-
     async function bootstrap(): Promise<void> {
       try {
-        const [healthResponse, signalsResponse, eventsResponse] = await Promise.all([
+        const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse] = await Promise.all([
           fetchHealth(),
           fetchSignals(),
-          fetchEvents(100)
+          fetchEvents(100),
+          fetchMetrics(),
+          fetchCollectorStatus(),
+          fetchCatalogDefaults(),
+          fetchConfigView()
         ]);
-
         if (!mounted) {
           return;
         }
-
         setHealth(healthResponse.status);
         setSnapshot(signalsResponse);
         setEvents(eventsResponse.map(normalizeEventEnvelope).filter((e): e is EventEnvelope => e !== null).slice(-MAX_EVENTS));
+        setMetrics(metricsResponse);
+        setMetricsUpdatedAt(Date.now());
+        setCollectorStatus(statusResponse);
+        setCatalogDefaults(defaultsResponse);
+        setConfigView(configResponse);
         setError(null);
       } catch (err) {
         if (!mounted) {
@@ -74,22 +119,36 @@ export default function App() {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       }
     }
-
     bootstrap();
-
     return () => {
       mounted = false;
     };
   }, []);
 
   useEffect(() => {
-    let disposed = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const [metricsResponse, statusResponse] = await Promise.all([fetchMetrics(), fetchCollectorStatus()]);
+        setMetrics(metricsResponse);
+        setMetricsUpdatedAt(Date.now());
+        setCollectorStatus(statusResponse);
+      } catch {
+        // keep existing values if diagnostics polling fails temporarily
+      }
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
+  useEffect(() => {
+    pausedRef.current = eventFeedPaused;
+  }, [eventFeedPaused]);
+
+  useEffect(() => {
+    let disposed = false;
     const connect = (): void => {
       if (disposed) {
         return;
       }
-
       setConnectionState((state) => (state === 'open' ? state : 'connecting'));
       const source = new EventSource('/api/stream');
       eventSourceRef.current = source;
@@ -102,11 +161,17 @@ export default function App() {
       const onSseMessage = (message: MessageEvent<string>) => {
         try {
           const normalized = normalizeEventEnvelope(JSON.parse(message.data));
-          if (normalized) {
-            ingestEvent(normalized);
+          if (!normalized) {
+            return;
           }
+          if (pausedRef.current) {
+            setPausedEventBuffer((previous) => [...previous, normalized].slice(-MAX_EVENTS));
+          } else {
+            setEvents((previous) => [...previous, normalized].slice(-MAX_EVENTS));
+          }
+          setSnapshot((previous) => applyOptimisticUpdate(previous, normalized));
         } catch {
-          // Keep stream alive even if one message is malformed.
+          // ignore malformed payload and keep stream alive
         }
       };
 
@@ -126,7 +191,6 @@ export default function App() {
     };
 
     connect();
-
     return () => {
       disposed = true;
       setConnectionState('closed');
@@ -137,224 +201,463 @@ export default function App() {
     };
   }, []);
 
-  const ingestEvent = (envelope: EventEnvelope): void => {
-    setEvents((previous) => [...previous, envelope].slice(-MAX_EVENTS));
-    setSnapshot((previous) => applyOptimisticUpdate(previous, envelope));
+  useEffect(() => {
+    if (eventFeedPaused || pausedEventBuffer.length === 0) {
+      return;
+    }
+    setEvents((previous) => [...previous, ...pausedEventBuffer].slice(-MAX_EVENTS));
+    setPausedEventBuffer([]);
+  }, [eventFeedPaused, pausedEventBuffer]);
+
+  const filteredEvents = useMemo(() => filterEvents(events, eventTypeFilter, searchQuery), [events, eventTypeFilter, searchQuery]);
+  const siteEntries = useMemo(() => Object.values(snapshot.sites).sort((a, b) => a.siteId.localeCompare(b.siteId)), [snapshot.sites]);
+  const newsEntries = useMemo(() => Object.values(snapshot.news).sort((a, b) => a.source.localeCompare(b.source)), [snapshot.news]);
+  const weatherEntriesByLocation = useMemo(() => snapshot.weather, [snapshot.weather]);
+  const marketEntries = useMemo(() => watchlist.map((symbol) => snapshot.markets?.[symbol] ?? demoQuote(symbol)), [watchlist, snapshot.markets]);
+  const aqiByLocation = useMemo(
+    () =>
+      Object.fromEntries(
+        zipCodes.map((zip) => [zip, snapshot.airQuality?.[zip] ?? demoAirQuality(zip)])
+      ) as Record<string, AirQualitySignal>,
+    [zipCodes, snapshot.airQuality]
+  );
+  const happeningsEntries = useMemo(
+    () => zipCodes.map((zip) => snapshot.localHappenings?.[zip] ?? demoLocalHappenings(zip)),
+    [zipCodes, snapshot.localHappenings]
+  );
+  const showHeaderStatus = health !== 'ok' || connectionState !== 'open';
+
+  const addZip = (): 'added' | 'invalid' | 'duplicate' | 'limit' => {
+    const value = zipInput.trim();
+    if (!/^\d{5}$/.test(value)) {
+      return 'invalid';
+    }
+    let outcome: 'added' | 'duplicate' | 'limit' = 'added';
+    setZipCodes((previous) => {
+      if (previous.includes(value)) {
+        outcome = 'duplicate';
+        return previous;
+      }
+      if (previous.length >= 10) {
+        outcome = 'limit';
+        return previous;
+      }
+      return [...previous, value];
+    });
+    setZipInput('');
+    return outcome;
   };
 
-  const filteredEvents = useMemo(() => {
-    return filterEvents(events, eventTypeFilter, searchQuery);
-  }, [events, eventTypeFilter, searchQuery]);
+  const addSymbol = (): 'added' | 'invalid' | 'duplicate' => {
+    const value = symbolInput.trim().toUpperCase();
+    if (!value) {
+      return 'invalid';
+    }
+    let outcome: 'added' | 'duplicate' = 'added';
+    setWatchlist((previous) => {
+      if (previous.includes(value)) {
+        outcome = 'duplicate';
+        return previous;
+      }
+      return [...previous, value];
+    });
+    setSymbolInput('');
+    return outcome;
+  };
 
-  const weatherEntries = Object.values(snapshot.weather).sort((a, b) => a.location.localeCompare(b.location));
-  const newsEntries = Object.values(snapshot.news).sort((a, b) => a.source.localeCompare(b.source));
-  const siteEntries = Object.values(snapshot.sites).sort((a, b) => a.siteId.localeCompare(b.siteId));
+  const resetSettingsToDefaults = () => {
+    const nextZips = catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes.slice(0, 10) : FALLBACK_DEFAULT_ZIPS;
+    const nextWatchlist = catalogDefaults.defaultWatchlist.length > 0 ? catalogDefaults.defaultWatchlist : FALLBACK_DEFAULT_WATCHLIST;
+    setZipCodes(nextZips);
+    setWatchlist(nextWatchlist);
+    setZipInput('');
+    setSymbolInput('');
+  };
+
+  const restorePlacesDefaults = () => {
+    const nextZips = catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes.slice(0, 10) : FALLBACK_DEFAULT_ZIPS;
+    setZipCodes(nextZips);
+    setZipInput('');
+  };
+
+  const restoreWatchlistDefaults = () => {
+    const nextWatchlist = catalogDefaults.defaultWatchlist.length > 0 ? catalogDefaults.defaultWatchlist : FALLBACK_DEFAULT_WATCHLIST;
+    setWatchlist(nextWatchlist);
+    setSymbolInput('');
+  };
 
   return (
     <div className="app">
-      <header className="header card">
-        <h1>Signal Sentinel</h1>
-        <div className="status-row">
-          <span>Health: <strong>{health}</strong></span>
-          <span>Connection: <strong>{connectionState}</strong></span>
-          {connectionState === 'reconnecting' && <span className="reconnecting">Reconnecting...</span>}
+      <header className="app-header">
+        <div className="app-container">
+          <div className="card">
+            <div className="header-top">
+              <h1>Today&apos;s Overview</h1>
+              <nav className="nav">
+                <a href="#/" className={route === 'home' ? 'active' : ''}>Home</a>
+                <a href="#/settings" className={route === 'settings' ? 'active' : ''}>⚙ Settings</a>
+                <a href="#/admin" className={route === 'admin' ? 'active' : ''}>Admin / Diagnostics</a>
+              </nav>
+            </div>
+            {showHeaderStatus && (
+              <div className="header-status">
+                {health !== 'ok' && <span className="warning">Backend health: degraded</span>}
+                {connectionState !== 'open' && <span className="warning">Live updates: disconnected</span>}
+                {connectionState === 'reconnecting' && <span className="reconnecting">Reconnecting...</span>}
+              </div>
+            )}
+            {error && <p className="error">{error}</p>}
+          </div>
         </div>
-        {error && <p className="error">{error}</p>}
       </header>
 
-      <main className="grid">
+      <div className="app-container">
+        {route === 'home' ? (
+          <HomePage
+            zipCodes={zipCodes}
+            weatherEntriesByLocation={weatherEntriesByLocation}
+            aqiByLocation={aqiByLocation}
+            newsEntries={newsEntries}
+            happeningsEntries={happeningsEntries}
+            marketEntries={marketEntries}
+          />
+        ) : route === 'settings' ? (
+          <SettingsPage
+            zipCodes={zipCodes}
+            zipInput={zipInput}
+            setZipInput={setZipInput}
+            addZip={addZip}
+            removeZip={(zip) => setZipCodes((previous) => previous.filter((value) => value !== zip))}
+            watchlist={watchlist}
+            symbolInput={symbolInput}
+            setSymbolInput={setSymbolInput}
+            addSymbol={addSymbol}
+            removeSymbol={(symbol) => setWatchlist((previous) => previous.filter((value) => value !== symbol))}
+            onRestorePlaces={restorePlacesDefaults}
+            onRestoreWatchlist={restoreWatchlistDefaults}
+            onReset={resetSettingsToDefaults}
+          />
+        ) : (
+          <AdminDashboard
+            health={health}
+            connectionState={connectionState}
+            metrics={metrics}
+            metricsUpdatedAt={metricsUpdatedAt}
+            collectorStatus={collectorStatus}
+            siteEntries={siteEntries}
+            catalogDefaults={catalogDefaults}
+            configView={configView}
+            filteredEvents={filteredEvents}
+            eventTypeFilter={eventTypeFilter}
+            setEventTypeFilter={setEventTypeFilter}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            expandedEvents={expandedEvents}
+            setExpandedEvents={setExpandedEvents}
+            knownTypes={KNOWN_SSE_TYPES}
+            maxEvents={MAX_EVENTS}
+            paused={eventFeedPaused}
+            onTogglePause={() => setEventFeedPaused((prev) => !prev)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+type HomePageProps = {
+  zipCodes: string[];
+  weatherEntriesByLocation: Record<string, WeatherSignal>;
+  aqiByLocation: Record<string, AirQualitySignal>;
+  newsEntries: SignalsSnapshot['news'][string][];
+  happeningsEntries: LocalHappeningsSignal[];
+  marketEntries: MarketQuoteSignal[];
+};
+
+function HomePage(props: HomePageProps) {
+  return (
+    <main>
+      <section className="primary-grid">
         <section className="card weather">
-          <h2>Weather</h2>
-          {weatherEntries.length === 0 ? <p className="empty">No weather signals yet.</p> : weatherEntries.map((item) => (
-            <article key={item.location} className="item">
-              <h3>{item.location}</h3>
-              <p>{item.tempF.toFixed(1)} F, {item.conditions}</p>
-              <p className="meta">Updated: {epochSecondsToDate(item.updatedAt).toLocaleString()}</p>
-              {item.alerts.length > 0 && (
-                <ul>
-                  {item.alerts.map((alert, index) => <li key={`${item.location}-${index}`}>{alert}</li>)}
-                </ul>
-              )}
-            </article>
-          ))}
-        </section>
-
-        <section className="card news">
-          <h2>Top News</h2>
-          {newsEntries.length === 0 ? <p className="empty">No news signals yet.</p> : newsEntries.map((source) => (
-            <article key={source.source} className="item">
-              <h3>{source.source}</h3>
-              <p className="meta">Updated: {formatInstant(source.updatedAt)}</p>
-              {source.stories.length === 0 ? (
-                <p className="empty">No stories in current snapshot.</p>
-              ) : (
-                <ul>
-                  {source.stories.map((story, idx) => (
-                    <li key={`${source.source}-${idx}`}>
-                      <a href={story.link} target="_blank" rel="noreferrer">{story.title}</a>
-                      <span className="meta"> ({formatInstant(story.publishedAt)})</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </article>
-          ))}
-        </section>
-
-        <section className="card sites">
-          <h2>Sites</h2>
-          {siteEntries.length === 0 ? (
-            <p className="empty">No site signals yet.</p>
+          <h2>Weather & Air Quality</h2>
+          {props.zipCodes.length === 0 ? (
+            <p className="empty">No ZIP codes selected. Add places in Settings.</p>
           ) : (
-            <div className="table-wrapper">
-              <table>
+            <div className="card-body">
+              <table className="weather-table">
                 <thead>
                   <tr>
-                    <th>Site</th>
-                    <th>Title</th>
-                    <th>Links</th>
-                    <th>Last Checked</th>
-                    <th>Last Changed</th>
-                    <th>Hash</th>
+                    <th>Place</th>
+                    <th>Weather</th>
+                    <th>Air Quality</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {siteEntries.map((site) => (
-                    <tr key={site.siteId}>
-                      <td><a href={site.url} target="_blank" rel="noreferrer">{site.siteId}</a></td>
-                      <td>{site.title ?? '-'}</td>
-                      <td>{site.linkCount}</td>
-                      <td>{formatInstant(site.lastChecked)}</td>
-                      <td>{formatInstant(site.lastChanged)}</td>
-                      <td className="hash">{site.hash || '-'}</td>
-                    </tr>
-                  ))}
+                  {props.zipCodes.map((zip) => {
+                    const weather = props.weatherEntriesByLocation[zip];
+                    const aqi = props.aqiByLocation[zip];
+                    return (
+                      <tr key={zip}>
+                        <td>{formatPlaceLabel(zip)}</td>
+                        <td>
+                          {weather ? (
+                            <>
+                              {weatherIcon(weather.conditions)} {weather.tempF.toFixed(1)} F, {weather.conditions}
+                            </>
+                          ) : (
+                            <span className="empty-inline">Waiting for first weather update for this ZIP.</span>
+                          )}
+                        </td>
+                        <td>
+                          {aqi ? (
+                            <>AQI {aqi.aqi} <span className="aqi-meta">- {aqi.category}</span></>
+                          ) : (
+                            <span className="empty-inline">Waiting for first AQI update for this ZIP.</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </section>
 
-        <section className="card events">
-          <div className="event-header">
-            <h2>Live Event Feed</h2>
-            <div className="filters">
-              <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value)}>
-                <option value="ALL">All types</option>
-                <option value="CollectorTickStarted">CollectorTickStarted</option>
-                <option value="CollectorTickCompleted">CollectorTickCompleted</option>
-                <option value="SiteFetched">SiteFetched</option>
-                <option value="ContentChanged">ContentChanged</option>
-                <option value="NewsUpdated">NewsUpdated</option>
-                <option value="WeatherUpdated">WeatherUpdated</option>
-                <option value="AlertRaised">AlertRaised</option>
-              </select>
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search events"
-              />
-            </div>
-          </div>
-          <p className="meta">Showing {filteredEvents.length} events (max stored: {MAX_EVENTS})</p>
-          <div className="event-list">
-            {filteredEvents.length === 0 ? (
-              <p className="empty">No events match current filters.</p>
-            ) : (
-              filteredEvents.map((entry, index) => (
-                <article key={`${entry.timestamp}-${index}`} className="event-item">
-                  <div className="event-title">
-                    <strong>{formatEpochSecondsTime(entry.timestamp)} | {entry.type}</strong>
-                    <span>{summarizeEvent(entry)}</span>
-                  </div>
-                  <p className="meta">At {formatEpochSecondsDateTime(entry.timestamp)}</p>
-                  <button
-                    type="button"
-                    className="toggle"
-                    onClick={() => toggleExpanded(eventRowId(entry, index), setExpandedEvents)}
-                  >
-                    {expandedEvents.has(eventRowId(entry, index)) ? 'Hide details' : 'Show details'}
-                  </button>
-                  {expandedEvents.has(eventRowId(entry, index)) && (
-                    <pre>{JSON.stringify(entry, null, 2)}</pre>
-                  )}
-                </article>
-              ))
-            )}
+        <section className="card news">
+          <h2>Top News</h2>
+          <div className="card-body">
+            {props.newsEntries.length === 0 ? <p className="empty">No news signals yet.</p> : props.newsEntries.map((source) => (
+              <article key={source.source} className="item">
+                <h3>{source.source}</h3>
+                {source.stories.length === 0 ? <p className="empty">No stories in current snapshot.</p> : (
+                  <ul className="news-list top-news">
+                    {source.stories.slice(0, 5).map((story, idx) => (
+                      <li key={`${source.source}-${idx}`}><a href={story.link} target="_blank" rel="noreferrer">{story.title}</a></li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            ))}
           </div>
         </section>
-      </main>
-    </div>
+      </section>
+
+      <section className="secondary-grid">
+        <section className="card">
+          <h2>Local What&apos;s Happening</h2>
+          <div className="card-body">
+            {props.happeningsEntries.length === 0 ? <p className="empty">No local places selected.</p> : props.happeningsEntries.map((entry) => (
+              <article key={entry.location} className="item">
+                <h3>{formatPlaceLabel(entry.location)}</h3>
+                <ul>{entry.headlines.map((headline, index) => <li key={`${entry.location}-${index}`}>{headline}</li>)}</ul>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="card">
+          <h2>Markets</h2>
+          <div className="card-body">
+            {props.marketEntries.length === 0 ? <p className="empty">No symbols in watchlist.</p> : props.marketEntries.map((entry) => (
+              <article key={entry.symbol} className="item market-row">
+                <h3>{entry.symbol}</h3>
+                <p><span className="market-value">{entry.price.toFixed(2)} ({entry.change >= 0 ? '+' : ''}{entry.change.toFixed(2)})</span></p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+type SettingsPageProps = {
+  zipCodes: string[];
+  zipInput: string;
+  setZipInput: Dispatch<SetStateAction<string>>;
+  addZip: () => 'added' | 'invalid' | 'duplicate' | 'limit';
+  removeZip: (zip: string) => void;
+  watchlist: string[];
+  symbolInput: string;
+  setSymbolInput: Dispatch<SetStateAction<string>>;
+  addSymbol: () => 'added' | 'invalid' | 'duplicate';
+  removeSymbol: (symbol: string) => void;
+  onRestorePlaces: () => void;
+  onRestoreWatchlist: () => void;
+  onReset: () => void;
+};
+
+function SettingsPage(props: SettingsPageProps) {
+  const zipCandidate = props.zipInput.trim();
+  const symbolCandidate = props.symbolInput.trim().toUpperCase();
+  const zipValid = /^\d{5}$/.test(zipCandidate);
+  const symbolValid = symbolCandidate.length > 0;
+  const [zipHint, setZipHint] = useState<string>('');
+  const [symbolHint, setSymbolHint] = useState<string>('');
+  const [resetHint, setResetHint] = useState<string>('');
+  const defaultResetPrompt = 'Reset Places + Watchlist to defaults?';
+
+  return (
+    <main className="settings-page">
+      <section className="settings-intro">
+        <h2>Settings</h2>
+        <p className="meta">Configure Places and Markets on this device.</p>
+      </section>
+      <section className="settings-grid">
+        <section className="card controls">
+          <div className="card-title-row">
+            <h2>Places ({props.zipCodes.length}/10)</h2>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                props.onRestorePlaces();
+                setZipHint('');
+                setResetHint('');
+              }}
+            >
+              Restore defaults
+            </button>
+          </div>
+          <p className="meta">Add up to 10 US ZIP codes. Saved in browser localStorage.</p>
+          <form
+            className="inline-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const result = props.addZip();
+              setResetHint('');
+              if (result === 'invalid') {
+                setZipHint('Enter a 5-digit ZIP');
+              } else if (result === 'duplicate') {
+                setZipHint('Already added');
+              } else if (result === 'limit') {
+                setZipHint('You can add up to 10 ZIP codes');
+              } else {
+                setZipHint('');
+              }
+            }}
+          >
+            <label htmlFor="settings-zip-input" className="sr-only">ZIP code</label>
+            <input
+              id="settings-zip-input"
+              aria-label="ZIP code"
+              value={props.zipInput}
+              onChange={(e) => {
+                props.setZipInput(e.target.value.replace(/\D/g, '').slice(0, 5));
+                setZipHint('');
+              }}
+              placeholder="ZIP (e.g., 02108)"
+            />
+            <button type="submit" disabled={!zipValid}>Add ZIP</button>
+          </form>
+          {zipCandidate.length > 0 && !zipValid && <p className="meta inline-hint">Enter a 5-digit ZIP</p>}
+          {zipHint && <p className="meta inline-hint">{zipHint}</p>}
+          <div className="chips">
+            {props.zipCodes.map((zip) => (
+              <div key={zip} className="chip-item">
+                <span className="chip-label">{formatPlaceLabel(zip)}</span>
+                <button type="button" className="chip-remove" aria-label={`Remove ${formatPlaceLabel(zip)}`} onClick={() => props.removeZip(zip)}>x</button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card controls">
+          <div className="card-title-row">
+            <h2>Watchlist ({props.watchlist.length})</h2>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                props.onRestoreWatchlist();
+                setSymbolHint('');
+                setResetHint('');
+              }}
+            >
+              Restore defaults
+            </button>
+          </div>
+          <p className="meta">Symbols are stored in browser localStorage for this device.</p>
+          <form
+            className="inline-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const result = props.addSymbol();
+              setResetHint('');
+              if (result === 'invalid') {
+                setSymbolHint('Enter a symbol (e.g., NVDA)');
+              } else if (result === 'duplicate') {
+                setSymbolHint('Already added');
+              } else {
+                setSymbolHint('');
+              }
+            }}
+          >
+            <label htmlFor="settings-symbol-input" className="sr-only">Market symbol</label>
+            <input
+              id="settings-symbol-input"
+              aria-label="Market symbol"
+              value={props.symbolInput}
+              onChange={(e) => {
+                props.setSymbolInput(e.target.value.toUpperCase().replace(/\s+/g, ''));
+                setSymbolHint('');
+              }}
+              placeholder="Symbol (e.g., NVDA)"
+            />
+            <button type="submit" disabled={!symbolValid}>Add Symbol</button>
+          </form>
+          {props.symbolInput.length > 0 && !symbolValid && <p className="meta inline-hint">Enter a symbol (e.g., NVDA)</p>}
+          {symbolHint && <p className="meta inline-hint">{symbolHint}</p>}
+          <div className="chips">
+            {props.watchlist.map((symbol) => (
+              <div key={symbol} className="chip-item">
+                <span className="chip-label">{symbol}</span>
+                <button type="button" className="chip-remove" aria-label={`Remove ${symbol}`} onClick={() => props.removeSymbol(symbol)}>x</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </section>
+      <section className="card danger-zone">
+        <h2>Danger zone</h2>
+        <p className="meta">Reset Places and Watchlist back to default values for this device.</p>
+        <div className="settings-actions">
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm(defaultResetPrompt)) {
+                return;
+              }
+              props.onReset();
+              setZipHint('');
+              setSymbolHint('');
+              setResetHint('Reset complete');
+            }}
+          >
+            Reset to defaults
+          </button>
+          {resetHint && <p className="meta inline-hint">{resetHint}</p>}
+        </div>
+      </section>
+    </main>
   );
 }
 
 function applyOptimisticUpdate(snapshot: SignalsSnapshot, envelope: EventEnvelope): SignalsSnapshot {
   switch (envelope.type) {
     case 'WeatherUpdated': {
-      const weatherEvent = envelope.event as unknown as WeatherUpdatedEvent;
+      const event = envelope.event as { location: string; tempF: number; conditions: string; timestamp: number };
       return {
         ...snapshot,
         weather: {
           ...snapshot.weather,
-          [weatherEvent.location]: {
-            location: weatherEvent.location,
-            tempF: weatherEvent.tempF,
-            conditions: weatherEvent.conditions,
-            alerts: snapshot.weather[weatherEvent.location]?.alerts ?? [],
-            updatedAt: weatherEvent.timestamp
-          }
-        }
-      };
-    }
-    case 'NewsUpdated': {
-      const newsEvent = envelope.event as unknown as NewsUpdatedEvent;
-      const current = snapshot.news[newsEvent.source];
-      return {
-        ...snapshot,
-        news: {
-          ...snapshot.news,
-          [newsEvent.source]: {
-            source: newsEvent.source,
-            stories: current?.stories?.slice(0, newsEvent.storyCount) ?? [],
-            updatedAt: epochSecondsToDate(newsEvent.timestamp).toISOString()
-          }
-        }
-      };
-    }
-    case 'SiteFetched': {
-      const siteEvent = envelope.event as unknown as SiteFetchedEvent;
-      const current = snapshot.sites[siteEvent.siteId];
-      return {
-        ...snapshot,
-        sites: {
-          ...snapshot.sites,
-          [siteEvent.siteId]: {
-            siteId: siteEvent.siteId,
-            url: current?.url ?? siteEvent.url,
-            hash: current?.hash ?? '',
-            title: current?.title ?? null,
-            linkCount: current?.linkCount ?? 0,
-            lastChecked: epochSecondsToDate(siteEvent.timestamp).toISOString(),
-            lastChanged: current?.lastChanged ?? epochSecondsToDate(siteEvent.timestamp).toISOString()
-          }
-        }
-      };
-    }
-    case 'ContentChanged': {
-      const changeEvent = envelope.event as unknown as ContentChangedEvent;
-      const current = snapshot.sites[changeEvent.siteId];
-      return {
-        ...snapshot,
-        sites: {
-          ...snapshot.sites,
-          [changeEvent.siteId]: {
-            siteId: changeEvent.siteId,
-            url: current?.url ?? changeEvent.url,
-            hash: changeEvent.newHash,
-            title: current?.title ?? null,
-            linkCount: current?.linkCount ?? 0,
-            lastChecked: current?.lastChecked ?? epochSecondsToDate(changeEvent.timestamp).toISOString(),
-            lastChanged: epochSecondsToDate(changeEvent.timestamp).toISOString()
+          [event.location]: {
+            location: event.location,
+            tempF: event.tempF,
+            conditions: event.conditions,
+            alerts: snapshot.weather[event.location]?.alerts ?? [],
+            updatedAt: event.timestamp
           }
         }
       };
@@ -364,26 +667,31 @@ function applyOptimisticUpdate(snapshot: SignalsSnapshot, envelope: EventEnvelop
   }
 }
 
+function readRouteFromHash(): RouteName {
+  if (window.location.hash === '#/admin') {
+    return 'admin';
+  }
+  if (window.location.hash === '#/settings') {
+    return 'settings';
+  }
+  return 'home';
+}
+
+function weatherIcon(conditions: string): string {
+  const value = conditions.toLowerCase();
+  if (value.includes('rain') || value.includes('storm')) {
+    return '🌧';
+  }
+  if (value.includes('cloud')) {
+    return '☁️';
+  }
+  return '☀️';
+}
+
 function formatInstant(value: string | null | undefined): string {
   if (!value) {
     return '-';
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-function eventRowId(entry: EventEnvelope, index: number): string {
-  return `${entry.type}-${entry.timestamp}-${index}`;
-}
-
-function toggleExpanded(rowId: string, setExpandedEvents: Dispatch<SetStateAction<Set<string>>>): void {
-  setExpandedEvents((prev) => {
-    const next = new Set(prev);
-    if (next.has(rowId)) {
-      next.delete(rowId);
-    } else {
-      next.add(rowId);
-    }
-    return next;
-  });
 }

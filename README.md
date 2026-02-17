@@ -1,4 +1,4 @@
-# signal-sentinel
+# Today's Overview
 
 Always-on signals platform backend (Java 25, Maven multi-module) with collectors, stores, scheduler runtime, and REST/SSE service.
 
@@ -120,6 +120,10 @@ Run these after starting backend (default `http://localhost:8080`):
 - `curl -sS http://localhost:8080/api/signals`
 - `curl -sS "http://localhost:8080/api/events?limit=10"`
 - `curl -N --max-time 5 http://localhost:8080/api/stream`
+- `curl -sS http://localhost:8080/api/metrics`
+- `curl -sS http://localhost:8080/api/collectors/status`
+- `curl -sS http://localhost:8080/api/catalog/defaults`
+- `curl -sS http://localhost:8080/api/config`
 
 ## TLS Diagnostics and Truststore
 
@@ -181,6 +185,32 @@ Where reports are generated:
 
 Latest coverage snapshot (from `mvn clean verify` on February 15, 2026):
 
-- `core`: instruction 96.6%, line 97.5%
-- `collectors`: instruction 89.7%, line 91.0%
-- `service`: instruction 72.1%, line 68.5%
+- `core`: instruction 89.0%, line 93.9%
+- `collectors`: instruction 90.0%, line 91.0%
+- `service`: instruction 76.5%, line 73.0%
+
+## UI Routes
+
+- `#/` Home dashboard (default)
+  - Weather, News, Sites
+  - Air Quality / Local Happenings / Markets framework cards (demo-capable)
+  - Places (ZIP list) and Markets watchlist editors
+- `#/admin` Admin / Diagnostics
+  - Live event feed (filters + search + expandable JSON)
+  - Metrics, Collector Status, Defaults, and read-only Config panels
+
+## Phase 5 Notes
+
+- No login/auth yet.
+- Places ZIPs and Markets watchlist are client-side only for now:
+  - stored in browser `localStorage`
+  - not persisted server-side
+- AQI/Local/Markets cards may show demo data until Phase 6 data integrations are enabled.
+
+## Replacing Demo Sources
+
+Default demo config ships with trusted HTTPS endpoints (for example `https://www.mozilla.org/en-US/` and `https://blog.mozilla.org/feed/`) so collectors work in a stock JDK truststore.
+
+To customize:
+- edit `backend/config/sites.json` and `backend/config/rss.json` (and `backend/service/config/*` if you run directly from `backend/service`)
+- restart backend after config changes

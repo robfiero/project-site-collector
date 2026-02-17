@@ -1,35 +1,75 @@
 {
-  "sites" : { },
+  "sites" : {
+    "mozilla-home" : {
+      "siteId" : "mozilla-home",
+      "url" : "https://www.mozilla.org/en-US/",
+      "hash" : "f7bfaeae5271f1c64aaa16587120482f52b9382071b78bf500447654c2759481",
+      "title" : "Mozilla - Internet for people, not profit (US)",
+      "linkCount" : 0,
+      "lastChecked" : 1771331413.629558000,
+      "lastChanged" : 1771252525.609186000
+    }
+  },
   "news" : {
     "bbc-news" : {
       "source" : "bbc-news",
       "stories" : [ {
-        "title" : "Pereira announced as Forest boss on 18-month deal",
-        "link" : "https://www.bbc.com/sport/football/articles/c62678ldqmpo?at_medium=RSS&at_campaign=rss",
-        "publishedAt" : 1771161148.000000000,
-        "source" : "bbc-news"
-      }, {
-        "title" : "'The best ever!' Klaebo wins historic ninth Winter Olympics gold",
-        "link" : "https://www.bbc.com/sport/videos/cjd9e2ddzrmo?at_medium=RSS&at_campaign=rss",
-        "publishedAt" : 1771160465.000000000,
-        "source" : "bbc-news"
-      }, {
-        "title" : "Norway's Klaebo wins record ninth gold",
-        "link" : "https://www.bbc.com/sport/articles/cy4wmyjnlz1o?at_medium=RSS&at_campaign=rss",
-        "publishedAt" : 1771159357.000000000,
-        "source" : "bbc-news"
-      }, {
-        "title" : "UK wants action taken on Russia after Navalny frog poisoning, Cooper says",
-        "link" : "https://www.bbc.com/news/articles/c8r15e4ek2vo?at_medium=RSS&at_campaign=rss",
-        "publishedAt" : 1771158386.000000000,
+        "title" : "Man dies after entering flood water in police chase",
+        "link" : "https://www.bbc.com/news/articles/cd70dypr1n5o?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771172743.000000000,
         "source" : "bbc-news"
       }, {
         "title" : "GB curlers sweep aside Germany to edge closer to semis",
         "link" : "https://www.bbc.com/sport/articles/c15xzvll0vzo?at_medium=RSS&at_campaign=rss",
-        "publishedAt" : 1771157678.000000000,
+        "publishedAt" : 1771171439.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "Delivery van 'stuck on deadliest mudflat footpath'",
+        "link" : "https://www.bbc.com/news/articles/cn9e32yv9g5o?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771170020.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "Gender pay gap won't close for another 30 years, warns TUC",
+        "link" : "https://www.bbc.com/news/articles/cvg5l75yx6vo?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771169539.000000000,
+        "source" : "bbc-news"
+      }, {
+        "title" : "'Fast-spreading' measles outbreak hits several schools in London",
+        "link" : "https://www.bbc.com/news/articles/cev7edxxzm7o?at_medium=RSS&at_campaign=rss",
+        "publishedAt" : 1771169531.000000000,
         "source" : "bbc-news"
       } ],
-      "updatedAt" : 1771164086.686390000
+      "updatedAt" : 1771174510.566909000
+    },
+    "mozilla-blog" : {
+      "source" : "mozilla-blog",
+      "stories" : [ {
+        "title" : "Heading to India AI Impact Summit, Mozilla leaders call for investment in open source AI as a path to sovereignty",
+        "link" : "https://blog.mozilla.org/en/mozilla/india-ai-impact-summit/",
+        "publishedAt" : 1770987600.000000000,
+        "source" : "mozilla-blog"
+      }, {
+        "title" : "AI controls are coming to Firefox",
+        "link" : "https://blog.mozilla.org/en/firefox/ai-controls/",
+        "publishedAt" : 1770051632.000000000,
+        "source" : "mozilla-blog"
+      }, {
+        "title" : "The State of Mozilla: Are you ready to choose your future? ",
+        "link" : "https://blog.mozilla.org/en/mozilla/state-of-mozilla-25-26/",
+        "publishedAt" : 1769533513.000000000,
+        "source" : "mozilla-blog"
+      }, {
+        "title" : "Who will pioneer the next web?",
+        "link" : "https://blog.mozilla.org/en/mozilla-new-products/mozilla-pioneers/",
+        "publishedAt" : 1769454854.000000000,
+        "source" : "mozilla-blog"
+      }, {
+        "title" : "How Mozilla builds now",
+        "link" : "https://blog.mozilla.org/en/mozilla-new-products/how-mozilla-builds-now/",
+        "publishedAt" : 1769090400.000000000,
+        "source" : "mozilla-blog"
+      } ],
+      "updatedAt" : 1771331413.798402000
     }
   },
   "weather" : {
@@ -38,14 +78,14 @@
       "tempF" : 51.0,
       "conditions" : "Rain",
       "alerts" : [ ],
-      "updatedAt" : 1771164086.426595000
+      "updatedAt" : 1771331413.630646000
     },
     "Boston" : {
       "location" : "Boston",
       "tempF" : 42.0,
       "conditions" : "Cloudy",
       "alerts" : [ "Storm watch" ],
-      "updatedAt" : 1771164086.426204000
+      "updatedAt" : 1771331413.630643000
     }
   }
 }

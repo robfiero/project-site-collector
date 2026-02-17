@@ -12,6 +12,8 @@ import com.signalsentinel.collectors.weather.WeatherCollector;
 import com.signalsentinel.core.bus.EventBus;
 import com.signalsentinel.core.model.CollectorConfig;
 import com.signalsentinel.service.api.ApiServer;
+import com.signalsentinel.service.api.CatalogDefaults;
+import com.signalsentinel.service.api.DiagnosticsTracker;
 import com.signalsentinel.service.api.SseBroadcaster;
 import com.signalsentinel.service.config.ConfigLoader;
 import com.signalsentinel.service.http.HttpClientFactory;
@@ -94,8 +96,25 @@ public final class Main {
 
         SchedulerService scheduler = new SchedulerService(scheduledCollectors, context);
         SseBroadcaster broadcaster = new SseBroadcaster(eventBus);
+        DiagnosticsTracker diagnosticsTracker = new DiagnosticsTracker(eventBus, Clock.systemUTC(), broadcaster::clientCount);
+        Map<String, Object> configView = Map.of(
+                "collectors", collectorConfigs,
+                "sites", siteConfig,
+                "rss", rssConfig,
+                "weather", weatherConfig
+        );
+        Map<String, Object> catalogDefaults = CatalogDefaults.fromRssConfig(rssConfig);
         List<Collector> collectors = List.of(siteCollector, rssCollector, weatherCollector);
-        ApiServer apiServer = new ApiServer(8080, signalStore, eventStore, broadcaster, collectors);
+        ApiServer apiServer = new ApiServer(
+                8080,
+                signalStore,
+                eventStore,
+                broadcaster,
+                collectors,
+                diagnosticsTracker,
+                catalogDefaults,
+                configView
+        );
 
         scheduler.start();
         apiServer.start();

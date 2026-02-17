@@ -104,10 +104,53 @@ export interface SignalsSnapshot {
   sites: Record<string, SiteSignal>;
   news: Record<string, NewsSignal>;
   weather: Record<string, WeatherSignal>;
+  airQuality?: Record<string, AirQualitySignal>;
+  localHappenings?: Record<string, LocalHappeningsSignal>;
+  markets?: Record<string, MarketQuoteSignal>;
 }
 
 export interface EventEnvelope {
   type: string;
   timestamp: number;
   event: Record<string, unknown>;
+}
+
+export interface AirQualitySignal {
+  location: string;
+  aqi: number;
+  category: string;
+  updatedAt: string;
+}
+
+export interface LocalHappeningsSignal {
+  location: string;
+  headlines: string[];
+  updatedAt: string;
+}
+
+export interface MarketQuoteSignal {
+  symbol: string;
+  price: number;
+  change: number;
+  updatedAt: string;
+}
+
+export interface CollectorStatus {
+  lastRunAt: string | null;
+  lastDurationMillis: number | null;
+  lastSuccess: boolean | null;
+  lastErrorMessage: string | null;
+}
+
+export interface MetricsResponse {
+  sseClientsConnected: number;
+  eventsEmittedTotal: number;
+  recentEventsPerMinute: number;
+  collectors: Record<string, CollectorStatus>;
+}
+
+export interface CatalogDefaults {
+  defaultZipCodes: string[];
+  defaultNewsSources: Array<{ id: string; name: string; url: string; category: string }>;
+  defaultWatchlist: string[];
 }

@@ -2,8 +2,8 @@
   "interval": "PT30S",
   "sites": [
     {
-      "id": "example-home",
-      "url": "https://example.com",
+      "id": "mozilla-home",
+      "url": "https://www.mozilla.org/en-US/",
       "tags": ["sample", "public"],
       "parseMode": "TITLE"
     }
