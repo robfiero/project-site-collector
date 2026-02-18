@@ -9,7 +9,17 @@ vi.mock('./api', () => ({
   fetchMetrics: vi.fn(async () => ({ sseClientsConnected: 0, eventsEmittedTotal: 0, recentEventsPerMinute: 0, collectors: {} })),
   fetchCollectorStatus: vi.fn(async () => ({})),
   fetchCatalogDefaults: vi.fn(async () => ({ defaultZipCodes: ['02108'], defaultNewsSources: [], defaultWatchlist: ['AAPL'] })),
-  fetchConfigView: vi.fn(async () => ({ collectors: [] }))
+  fetchConfigView: vi.fn(async () => ({ collectors: [] })),
+  fetchEnvironment: vi.fn(async () => ([])),
+  fetchMe: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
+  fetchMyPreferences: vi.fn(async () => ({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })),
+  saveMyPreferences: vi.fn(async (payload) => payload),
+  fetchDevOutbox: vi.fn(async () => []),
+  login: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
+  signup: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
+  logout: vi.fn(async () => {}),
+  forgotPassword: vi.fn(async () => {}),
+  resetPassword: vi.fn(async () => {})
 }));
 
 class FakeEventSource {
@@ -55,6 +65,7 @@ describe('App', () => {
     };
     Object.defineProperty(globalThis, 'localStorage', { value: mockLocalStorage, configurable: true });
     localStorage.clear();
+    sessionStorage.clear();
     window.location.hash = '#/';
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.stubGlobal('EventSource', FakeEventSource);
@@ -68,6 +79,12 @@ describe('App', () => {
   });
 
   it('renders settings route with places/watchlist controls and formatted place labels', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108', '98101'],
+      watchlist: ['AAPL'],
+      newsSourceIds: []
+    });
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['02108', '98101']));
     localStorage.setItem('signal-sentinel:watchlist', JSON.stringify(['AAPL']));
     window.location.hash = '#/settings';
@@ -143,6 +160,12 @@ describe('App', () => {
   });
 
   it('restores defaults per card without resetting the other section', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['60601'],
+      watchlist: ['TSLA'],
+      newsSourceIds: []
+    });
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['60601']));
     localStorage.setItem('signal-sentinel:watchlist', JSON.stringify(['TSLA']));
     window.location.hash = '#/settings';
@@ -157,40 +180,53 @@ describe('App', () => {
     expect(screen.getByText('AAPL')).toBeTruthy();
   });
 
-  it('renders home useful panels without settings controls and shows AQI within weather rows', async () => {
+  it('renders home useful panels without settings controls and shows environment rows', async () => {
     const api = await import('./api');
-    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
-      sites: {},
-      news: {},
-      weather: {
-        '02108': {
-          location: '02108',
-          tempF: 72.5,
-          conditions: 'Clear',
-          alerts: [],
-          updatedAt: 1700000000
-        }
-      },
-      airQuality: {
-        '02108': {
-          location: '02108',
-          aqi: 42,
-          category: 'Good',
-          updatedAt: '2026-02-15T00:00:00Z'
-        }
-      }
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108'],
+      watchlist: [],
+      newsSourceIds: []
     });
+    vi.mocked(api.fetchEnvironment).mockResolvedValueOnce([]);
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['02108']));
     localStorage.setItem('signal-sentinel:watchlist', JSON.stringify([]));
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Weather & Air Quality' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Environment' })).toBeTruthy());
     expect(screen.queryByRole('heading', { name: 'Places' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Markets Watchlist' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Air Quality (AQI)' })).toBeNull();
     expect(screen.getAllByText('Boston, MA (02108)').length).toBeGreaterThan(0);
-    expect(screen.getByText((_, node) => node?.textContent === 'AQI 42 - Good')).toBeTruthy();
+    expect(screen.getByText('AQI unavailable')).toBeTruthy();
+    expect(screen.getByText('Waiting for first weather update for this ZIP.')).toBeTruthy();
+
+    FakeEventSource.emitAll('EnvWeatherUpdated', {
+      type: 'EnvWeatherUpdated',
+      timestamp: 1771105748.313279,
+      event: {
+        type: 'EnvWeatherUpdated',
+        timestamp: 1771105748.313279,
+        zip: '02108',
+        tempF: 72.5,
+        conditions: 'Clear'
+      }
+    });
+    FakeEventSource.emitAll('EnvAqiUpdated', {
+      type: 'EnvAqiUpdated',
+      timestamp: 1771105748.313279,
+      event: {
+        type: 'EnvAqiUpdated',
+        timestamp: 1771105748.313279,
+        zip: '02108',
+        aqi: 42,
+        category: 'Good',
+        message: null
+      }
+    });
+
+    await waitFor(() => expect(screen.getByText(/72\.5 F, Clear/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText((_, node) => node?.textContent === 'AQI 42 - Good')).toBeTruthy());
     expect(screen.getByText('No symbols in watchlist.')).toBeTruthy();
   });
 
@@ -307,5 +343,127 @@ describe('App', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Search events'), { target: { value: 'dns' } });
     expect(screen.getByText(/dns issue/i)).toBeTruthy();
+  });
+
+  it('hides settings nav for anonymous users and shows login/signup links', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/';
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: "Today's Overview" })).toBeTruthy());
+    expect(screen.queryByRole('link', { name: /settings/i })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Login' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Sign up' })).toBeTruthy();
+  });
+
+  it('keeps healthy anonymous UI when auth is disabled server-side', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    vi.mocked(api.fetchHealth).mockResolvedValueOnce({ status: 'ok' });
+    window.location.hash = '#/';
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: "Today's Overview" })).toBeTruthy());
+    expect(screen.queryByText('Backend health: degraded')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Login' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /Environment/i })).toBeTruthy();
+  });
+
+  it('login flow shows settings nav after successful sign-in', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/login';
+
+    render(<App />);
+
+    const emailInput = await screen.findByLabelText('Email');
+    fireEvent.change(emailInput, { target: { value: 'user@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }));
+
+    await waitFor(() => expect(api.login).toHaveBeenCalledWith('user@example.com', 'hunter2-password'));
+    await waitFor(() => expect(screen.getByRole('link', { name: /settings/i })).toBeTruthy());
+  });
+
+  it('redirects back to intended protected route after login', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/settings';
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Login' })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }));
+
+    await waitFor(() => expect(api.login).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Places/i })).toBeTruthy());
+  });
+
+  it('reset flow submits token and password from reset route', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/reset?token=test-reset-token';
+
+    render(<App />);
+
+    const passwordInput = await screen.findByLabelText('Password');
+    fireEvent.change(passwordInput, { target: { value: 'new-password-123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+
+    await waitFor(() => expect(api.resetPassword).toHaveBeenCalledWith('test-reset-token', 'new-password-123'));
+  });
+
+  it('loads and saves settings preferences for logged-in users', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108'],
+      watchlist: ['AAPL'],
+      newsSourceIds: []
+    });
+    window.location.hash = '#/settings';
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Boston, MA (02108)')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText('ZIP (e.g., 02108)'), { target: { value: '98101' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add ZIP' }));
+
+    await waitFor(() =>
+      expect(api.saveMyPreferences).toHaveBeenLastCalledWith({
+        zipCodes: ['02108', '98101'],
+        watchlist: ['AAPL'],
+        newsSourceIds: []
+      })
+    );
+    await waitFor(() => expect(screen.getByText('Saved ✅')).toBeTruthy());
+  });
+
+  it('handles 401 from authenticated preference save by expiring session', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108'],
+      watchlist: ['AAPL'],
+      newsSourceIds: []
+    });
+    vi.mocked(api.saveMyPreferences)
+      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })
+      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })
+      .mockRejectedValueOnce(new Error('Preferences update failed (401)'));
+    window.location.hash = '#/settings';
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Boston, MA (02108)')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText('ZIP (e.g., 02108)'), { target: { value: '98101' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add ZIP' }));
+
+    await waitFor(() => expect(screen.getByText('Session expired — please sign in again.')).toBeTruthy());
+    await waitFor(() => expect(screen.queryByRole('link', { name: /settings/i })).toBeNull());
+    expect(screen.queryByText('Backend health: degraded')).toBeNull();
   });
 });

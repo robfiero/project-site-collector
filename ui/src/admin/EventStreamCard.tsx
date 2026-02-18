@@ -98,7 +98,10 @@ function eventTone(type: string): string {
   if (type === 'SiteFetched') {
     return 'site';
   }
-  if (type === 'WeatherUpdated') {
+  if (type === 'WeatherUpdated' || type === 'EnvWeatherUpdated') {
+    return 'weather';
+  }
+  if (type === 'EnvAqiUpdated') {
     return 'weather';
   }
   return 'neutral';

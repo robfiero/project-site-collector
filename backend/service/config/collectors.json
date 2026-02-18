@@ -12,9 +12,9 @@
     "params": {}
   },
   {
-    "name": "weatherCollector",
+    "name": "envCollector",
     "enabled": true,
-    "intervalSeconds": 60,
+    "intervalSeconds": 300,
     "params": {}
   }
 ]

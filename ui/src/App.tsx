@@ -1,45 +1,65 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
+  fetchDevOutbox,
   fetchCatalogDefaults,
   fetchCollectorStatus,
   fetchConfigView,
+  fetchEnvironment,
   fetchEvents,
   fetchHealth,
+  fetchMe,
   fetchMetrics,
-  fetchSignals
+  fetchMyPreferences,
+  fetchSignals,
+  forgotPassword,
+  login,
+  logout,
+  resetPassword,
+  saveMyPreferences,
+  signup,
+  type AuthUserView,
+  type DevOutboxEmail
 } from './api';
-import { demoAirQuality, demoLocalHappenings, demoQuote } from './demoData';
+import { demoLocalHappenings, demoQuote } from './demoData';
 import { filterEvents, normalizeEventEnvelope } from './eventFeed';
 import { formatPlaceLabel } from './places';
 import AdminDashboard from './admin/AdminDashboard';
 import type {
-  AirQualitySignal,
   CatalogDefaults,
   CollectorStatus,
+  EnvStatus,
   EventEnvelope,
   LocalHappeningsSignal,
   MarketQuoteSignal,
   MetricsResponse,
-  SignalsSnapshot,
-  WeatherSignal
+  SignalsSnapshot
 } from './models';
 import { loadWatchlist, loadZipCodes, saveWatchlist, saveZipCodes } from './preferences';
 
 const MAX_EVENTS = 200;
+const MAX_WATCHLIST = 25;
 const FALLBACK_DEFAULT_ZIPS = ['02108', '98101'];
 const FALLBACK_DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
+const INTENDED_ROUTE_KEY = 'todays-overview:intended-route';
 const KNOWN_SSE_TYPES = [
   'CollectorTickStarted',
   'CollectorTickCompleted',
   'AlertRaised',
   'SiteFetched',
   'ContentChanged',
-  'WeatherUpdated',
-  'NewsUpdated'
+  'EnvWeatherUpdated',
+  'EnvAqiUpdated',
+  'NewsUpdated',
+  'UserRegistered',
+  'LoginSucceeded',
+  'LoginFailed',
+  'PasswordResetRequested',
+  'PasswordResetSucceeded',
+  'PasswordResetFailed'
 ] as const;
 
-type RouteName = 'home' | 'settings' | 'admin';
+type RouteName = 'home' | 'settings' | 'admin' | 'login' | 'signup' | 'forgot' | 'reset';
 type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
 const emptySnapshot: SignalsSnapshot = { sites: {}, news: {}, weather: {} };
@@ -63,8 +83,15 @@ export default function App() {
   const [collectorStatus, setCollectorStatus] = useState<Record<string, CollectorStatus>>({});
   const [catalogDefaults, setCatalogDefaults] = useState<CatalogDefaults>(emptyDefaults);
   const [configView, setConfigView] = useState<Record<string, unknown>>({});
+  const [envByZip, setEnvByZip] = useState<Record<string, EnvStatus>>({});
   const [zipCodes, setZipCodes] = useState<string[]>(loadZipCodes());
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist());
+  const [authUser, setAuthUser] = useState<AuthUserView | null>(null);
+  const [authResolved, setAuthResolved] = useState<boolean>(false);
+  const [sessionExpired, setSessionExpired] = useState<boolean>(false);
+  const [devOutbox, setDevOutbox] = useState<DevOutboxEmail[]>([]);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [settingsSaveState, setSettingsSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [zipInput, setZipInput] = useState<string>('');
   const [symbolInput, setSymbolInput] = useState<string>('');
 
@@ -72,6 +99,7 @@ export default function App() {
   const reconnectTimerRef = useRef<number | null>(null);
   const retryDelayRef = useRef<number>(1000);
   const pausedRef = useRef<boolean>(false);
+  const settingsSavedTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const onHashChange = () => setRoute(readRouteFromHash());
@@ -80,25 +108,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (authUser) {
+      return;
+    }
     saveZipCodes(zipCodes);
-  }, [zipCodes]);
+  }, [zipCodes, authUser]);
 
   useEffect(() => {
+    if (authUser) {
+      return;
+    }
     saveWatchlist(watchlist);
-  }, [watchlist]);
+  }, [watchlist, authUser]);
 
   useEffect(() => {
     let mounted = true;
     async function bootstrap(): Promise<void> {
       try {
-        const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse] = await Promise.all([
+        const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse, meResponse, outboxResponse] = await Promise.all([
           fetchHealth(),
           fetchSignals(),
           fetchEvents(100),
           fetchMetrics(),
           fetchCollectorStatus(),
           fetchCatalogDefaults(),
-          fetchConfigView()
+          fetchConfigView(),
+          fetchMe(),
+          fetchDevOutbox()
         ]);
         if (!mounted) {
           return;
@@ -111,12 +147,30 @@ export default function App() {
         setCollectorStatus(statusResponse);
         setCatalogDefaults(defaultsResponse);
         setConfigView(configResponse);
+        setAuthUser(meResponse);
+        setSessionExpired(false);
+        setDevOutbox(outboxResponse);
+        if (meResponse) {
+          try {
+            const prefs = await fetchMyPreferences();
+            setZipCodes(prefs.zipCodes);
+            setWatchlist(prefs.watchlist);
+          } catch (prefError) {
+            if (isUnauthorizedError(prefError)) {
+              handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+            } else {
+              throw prefError;
+            }
+          }
+        }
+        setAuthResolved(true);
         setError(null);
       } catch (err) {
         if (!mounted) {
           return;
         }
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+        setAuthResolved(true);
       }
     }
     bootstrap();
@@ -138,6 +192,13 @@ export default function App() {
     }, 15_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (authResolved && route === 'settings' && !authUser) {
+      storeIntendedRoute('#/settings');
+      window.location.hash = '#/login';
+    }
+  }, [authResolved, route, authUser]);
 
   useEffect(() => {
     pausedRef.current = eventFeedPaused;
@@ -170,6 +231,7 @@ export default function App() {
             setEvents((previous) => [...previous, normalized].slice(-MAX_EVENTS));
           }
           setSnapshot((previous) => applyOptimisticUpdate(previous, normalized));
+          setEnvByZip((previous) => applyEnvironmentUpdate(previous, normalized));
         } catch {
           // ignore malformed payload and keep stream alive
         }
@@ -212,20 +274,39 @@ export default function App() {
   const filteredEvents = useMemo(() => filterEvents(events, eventTypeFilter, searchQuery), [events, eventTypeFilter, searchQuery]);
   const siteEntries = useMemo(() => Object.values(snapshot.sites).sort((a, b) => a.siteId.localeCompare(b.siteId)), [snapshot.sites]);
   const newsEntries = useMemo(() => Object.values(snapshot.news).sort((a, b) => a.source.localeCompare(b.source)), [snapshot.news]);
-  const weatherEntriesByLocation = useMemo(() => snapshot.weather, [snapshot.weather]);
   const marketEntries = useMemo(() => watchlist.map((symbol) => snapshot.markets?.[symbol] ?? demoQuote(symbol)), [watchlist, snapshot.markets]);
-  const aqiByLocation = useMemo(
-    () =>
-      Object.fromEntries(
-        zipCodes.map((zip) => [zip, snapshot.airQuality?.[zip] ?? demoAirQuality(zip)])
-      ) as Record<string, AirQualitySignal>,
-    [zipCodes, snapshot.airQuality]
+  const effectiveZipCodes = useMemo(
+    () => (zipCodes.length > 0
+      ? zipCodes
+      : (catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes : FALLBACK_DEFAULT_ZIPS)),
+    [zipCodes, catalogDefaults.defaultZipCodes]
   );
   const happeningsEntries = useMemo(
-    () => zipCodes.map((zip) => snapshot.localHappenings?.[zip] ?? demoLocalHappenings(zip)),
-    [zipCodes, snapshot.localHappenings]
+    () => effectiveZipCodes.map((zip) => snapshot.localHappenings?.[zip] ?? demoLocalHappenings(zip)),
+    [effectiveZipCodes, snapshot.localHappenings]
   );
   const showHeaderStatus = health !== 'ok' || connectionState !== 'open';
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadEnvironment(): Promise<void> {
+      try {
+        const statuses = await fetchEnvironment(effectiveZipCodes);
+        if (cancelled) {
+          return;
+        }
+        setEnvByZip(Object.fromEntries(statuses.map((status) => [status.zip, status])) as Record<string, EnvStatus>);
+      } catch {
+        if (!cancelled) {
+          setEnvByZip({});
+        }
+      }
+    }
+    loadEnvironment();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveZipCodes]);
 
   const addZip = (): 'added' | 'invalid' | 'duplicate' | 'limit' => {
     const value = zipInput.trim();
@@ -248,15 +329,19 @@ export default function App() {
     return outcome;
   };
 
-  const addSymbol = (): 'added' | 'invalid' | 'duplicate' => {
+  const addSymbol = (): 'added' | 'invalid' | 'duplicate' | 'limit' => {
     const value = symbolInput.trim().toUpperCase();
     if (!value) {
       return 'invalid';
     }
-    let outcome: 'added' | 'duplicate' = 'added';
+    let outcome: 'added' | 'duplicate' | 'limit' = 'added';
     setWatchlist((previous) => {
       if (previous.includes(value)) {
         outcome = 'duplicate';
+        return previous;
+      }
+      if (previous.length >= MAX_WATCHLIST) {
+        outcome = 'limit';
         return previous;
       }
       return [...previous, value];
@@ -286,6 +371,52 @@ export default function App() {
     setSymbolInput('');
   };
 
+  useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+    setSettingsSaveState('saving');
+    saveMyPreferences({
+      zipCodes,
+      watchlist,
+      newsSourceIds: []
+    }).then(() => {
+      setSettingsSaveState('saved');
+      if (settingsSavedTimerRef.current !== null) {
+        window.clearTimeout(settingsSavedTimerRef.current);
+      }
+      settingsSavedTimerRef.current = window.setTimeout(() => setSettingsSaveState('idle'), 2000);
+    }).catch((error) => {
+      if (isUnauthorizedError(error)) {
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+        setSettingsSaveState('idle');
+        return;
+      }
+      setSettingsSaveState('idle');
+    });
+  }, [authUser, zipCodes, watchlist]);
+
+  useEffect(() => {
+    return () => {
+      if (settingsSavedTimerRef.current !== null) {
+        window.clearTimeout(settingsSavedTimerRef.current);
+      }
+    };
+  }, []);
+
+  const doSignOut = async () => {
+    try {
+      await logout();
+      setAuthUser(null);
+      setSessionExpired(false);
+      setZipCodes(loadZipCodes());
+      setWatchlist(loadWatchlist());
+      window.location.hash = '#/';
+    } catch (err) {
+      setAuthMessage(err instanceof Error ? err.message : 'Sign out failed');
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -295,10 +426,14 @@ export default function App() {
               <h1>Today&apos;s Overview</h1>
               <nav className="nav">
                 <a href="#/" className={route === 'home' ? 'active' : ''}>Home</a>
-                <a href="#/settings" className={route === 'settings' ? 'active' : ''}>⚙ Settings</a>
+                {authUser && <a href="#/settings" className={route === 'settings' ? 'active' : ''}>⚙ Settings</a>}
                 <a href="#/admin" className={route === 'admin' ? 'active' : ''}>Admin / Diagnostics</a>
+                {!authUser && <a href="#/login" className={route === 'login' ? 'active' : ''}>Login</a>}
+                {!authUser && <a href="#/signup" className={route === 'signup' ? 'active' : ''}>Sign up</a>}
+                {authUser && <button type="button" onClick={doSignOut}>Sign out</button>}
               </nav>
             </div>
+            {authUser && <p className="meta">Signed in as {authUser.email}</p>}
             {showHeaderStatus && (
               <div className="header-status">
                 {health !== 'ok' && <span className="warning">Backend health: degraded</span>}
@@ -307,6 +442,13 @@ export default function App() {
               </div>
             )}
             {error && <p className="error">{error}</p>}
+            {sessionExpired && (
+              <p className="error session-expired-banner">
+                Session expired — please sign in again.
+                <button type="button" onClick={() => setSessionExpired(false)} aria-label="Dismiss session expired message">Dismiss</button>
+              </p>
+            )}
+            {authMessage && <p className="error">{authMessage}</p>}
           </div>
         </div>
       </header>
@@ -314,14 +456,14 @@ export default function App() {
       <div className="app-container">
         {route === 'home' ? (
           <HomePage
-            zipCodes={zipCodes}
-            weatherEntriesByLocation={weatherEntriesByLocation}
-            aqiByLocation={aqiByLocation}
+            zipCodes={effectiveZipCodes}
+            envByZip={envByZip}
             newsEntries={newsEntries}
             happeningsEntries={happeningsEntries}
             marketEntries={marketEntries}
           />
         ) : route === 'settings' ? (
+          authUser ? (
           <SettingsPage
             zipCodes={zipCodes}
             zipInput={zipInput}
@@ -332,10 +474,87 @@ export default function App() {
             symbolInput={symbolInput}
             setSymbolInput={setSymbolInput}
             addSymbol={addSymbol}
+            maxWatchlist={MAX_WATCHLIST}
+            saveState={settingsSaveState}
             removeSymbol={(symbol) => setWatchlist((previous) => previous.filter((value) => value !== symbol))}
             onRestorePlaces={restorePlacesDefaults}
             onRestoreWatchlist={restoreWatchlistDefaults}
             onReset={resetSettingsToDefaults}
+          />
+          ) : authResolved ? (
+            <AuthPage
+              title="Login required"
+              description="Sign in to manage server-side settings."
+              submitLabel="Go to Login"
+              fields={[]}
+              onSubmit={async () => {
+                window.location.hash = '#/login';
+              }}
+            />
+          ) : (
+            <main className="settings-page"><section className="card"><p className="meta">Loading account...</p></section></main>
+          )
+        ) : route === 'login' ? (
+          <AuthPage
+            title="Login"
+            description="Sign in to save your settings server-side."
+            submitLabel="Login"
+            fields={[
+              { key: 'email', label: 'Email', type: 'email' },
+              { key: 'password', label: 'Password', type: 'password' }
+            ]}
+            onSubmit={async (values) => {
+              const user = await login(values.email, values.password);
+              setAuthUser(user);
+              setSessionExpired(false);
+              const prefs = await fetchMyPreferences();
+              setZipCodes(prefs.zipCodes);
+              setWatchlist(prefs.watchlist);
+              window.location.hash = consumeIntendedRoute();
+            }}
+          />
+        ) : route === 'signup' ? (
+          <AuthPage
+            title="Sign up"
+            description="Create an account to personalize your dashboard."
+            submitLabel="Create account"
+            fields={[
+              { key: 'email', label: 'Email', type: 'email' },
+              { key: 'password', label: 'Password', type: 'password' }
+            ]}
+            onSubmit={async (values) => {
+              const user = await signup(values.email, values.password);
+              setAuthUser(user);
+              setSessionExpired(false);
+              window.location.hash = consumeIntendedRoute();
+            }}
+          />
+        ) : route === 'forgot' ? (
+          <AuthPage
+            title="Forgot password"
+            description="Enter your email and we will send reset instructions."
+            submitLabel="Send reset link"
+            fields={[{ key: 'email', label: 'Email', type: 'email' }]}
+            onSubmit={async (values) => {
+              await forgotPassword(values.email);
+              setAuthMessage('If that account exists, a reset email has been sent.');
+            }}
+          />
+        ) : route === 'reset' ? (
+          <AuthPage
+            title="Reset password"
+            description="Set your new password."
+            submitLabel="Reset password"
+            fields={[{ key: 'password', label: 'New password', type: 'password' }]}
+            onSubmit={async (values) => {
+              const token = readResetTokenFromHash();
+              if (!token) {
+                throw new Error('Reset token missing');
+              }
+              await resetPassword(token, values.password);
+              setAuthMessage('Password reset complete. You can now log in.');
+              window.location.hash = '#/login';
+            }}
           />
         ) : (
           <AdminDashboard
@@ -358,6 +577,8 @@ export default function App() {
             maxEvents={MAX_EVENTS}
             paused={eventFeedPaused}
             onTogglePause={() => setEventFeedPaused((prev) => !prev)}
+            devOutbox={devOutbox}
+            currentUser={authUser}
           />
         )}
       </div>
@@ -367,8 +588,7 @@ export default function App() {
 
 type HomePageProps = {
   zipCodes: string[];
-  weatherEntriesByLocation: Record<string, WeatherSignal>;
-  aqiByLocation: Record<string, AirQualitySignal>;
+  envByZip: Record<string, EnvStatus>;
   newsEntries: SignalsSnapshot['news'][string][];
   happeningsEntries: LocalHappeningsSignal[];
   marketEntries: MarketQuoteSignal[];
@@ -379,7 +599,7 @@ function HomePage(props: HomePageProps) {
     <main>
       <section className="primary-grid">
         <section className="card weather">
-          <h2>Weather & Air Quality</h2>
+          <h2>Environment</h2>
           {props.zipCodes.length === 0 ? (
             <p className="empty">No ZIP codes selected. Add places in Settings.</p>
           ) : (
@@ -394,25 +614,25 @@ function HomePage(props: HomePageProps) {
                 </thead>
                 <tbody>
                   {props.zipCodes.map((zip) => {
-                    const weather = props.weatherEntriesByLocation[zip];
-                    const aqi = props.aqiByLocation[zip];
+                    const env = props.envByZip[zip];
                     return (
                       <tr key={zip}>
                         <td>{formatPlaceLabel(zip)}</td>
                         <td>
-                          {weather ? (
+                          {env?.weather?.temperatureF != null ? (
                             <>
-                              {weatherIcon(weather.conditions)} {weather.tempF.toFixed(1)} F, {weather.conditions}
+                              {weatherIcon(env.weather.forecast)} {env.weather.temperatureF.toFixed(1)} F, {env.weather.forecast}
                             </>
                           ) : (
                             <span className="empty-inline">Waiting for first weather update for this ZIP.</span>
                           )}
+                          {env?.updatedAt && <div className="meta">{formatInstant(env.updatedAt)}</div>}
                         </td>
                         <td>
-                          {aqi ? (
-                            <>AQI {aqi.aqi} <span className="aqi-meta">- {aqi.category}</span></>
+                          {env?.aqi?.aqi != null ? (
+                            <>AQI {env.aqi.aqi} <span className="aqi-meta">- {env.aqi.category ?? 'Unknown'}</span></>
                           ) : (
-                            <span className="empty-inline">Waiting for first AQI update for this ZIP.</span>
+                            <span className="empty-inline">{env?.aqi?.message ?? 'AQI unavailable'}</span>
                           )}
                         </td>
                       </tr>
@@ -481,7 +701,9 @@ type SettingsPageProps = {
   watchlist: string[];
   symbolInput: string;
   setSymbolInput: Dispatch<SetStateAction<string>>;
-  addSymbol: () => 'added' | 'invalid' | 'duplicate';
+  addSymbol: () => 'added' | 'invalid' | 'duplicate' | 'limit';
+  maxWatchlist: number;
+  saveState: 'idle' | 'saving' | 'saved';
   removeSymbol: (symbol: string) => void;
   onRestorePlaces: () => void;
   onRestoreWatchlist: () => void;
@@ -521,6 +743,8 @@ function SettingsPage(props: SettingsPageProps) {
             </button>
           </div>
           <p className="meta">Add up to 10 US ZIP codes. Saved in browser localStorage.</p>
+          {props.saveState === 'saving' && <p className="meta inline-hint">Saving...</p>}
+          {props.saveState === 'saved' && <p className="meta inline-hint">Saved ✅</p>}
           <form
             className="inline-form"
             onSubmit={(e) => {
@@ -565,7 +789,7 @@ function SettingsPage(props: SettingsPageProps) {
 
         <section className="card controls">
           <div className="card-title-row">
-            <h2>Watchlist ({props.watchlist.length})</h2>
+            <h2>Watchlist ({props.watchlist.length}/{props.maxWatchlist})</h2>
             <button
               type="button"
               className="link-button"
@@ -589,6 +813,8 @@ function SettingsPage(props: SettingsPageProps) {
                 setSymbolHint('Enter a symbol (e.g., NVDA)');
               } else if (result === 'duplicate') {
                 setSymbolHint('Already added');
+              } else if (result === 'limit') {
+                setSymbolHint(`You can add up to ${props.maxWatchlist} symbols`);
               } else {
                 setSymbolHint('');
               }
@@ -644,6 +870,125 @@ function SettingsPage(props: SettingsPageProps) {
   );
 }
 
+type AuthField = {
+  key: 'email' | 'password';
+  label: string;
+  type: 'email' | 'password';
+};
+
+type AuthPageProps = {
+  title: string;
+  description: string;
+  submitLabel: string;
+  fields: AuthField[];
+  onSubmit: (values: Record<'email' | 'password', string>) => Promise<void>;
+};
+
+function AuthPage(props: AuthPageProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  return (
+    <main className="settings-page">
+      <section className="card controls">
+        <h2>{props.title}</h2>
+        <p className="meta">{props.description}</p>
+        <form
+          className="auth-form"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setPending(true);
+            setMessage(null);
+            try {
+              await props.onSubmit({ email, password });
+              setMessage('Success');
+            } catch (error) {
+              setMessage(formatAuthError(error));
+            } finally {
+              setPending(false);
+            }
+          }}
+        >
+          {props.fields.some((field) => field.key === 'email') && (
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+              />
+            </label>
+          )}
+          {props.fields.some((field) => field.key === 'password') && (
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="********"
+                required
+              />
+            </label>
+          )}
+          <button type="submit" disabled={pending}>{pending ? 'Working...' : props.submitLabel}</button>
+        </form>
+        {message && <p className="meta">{message}</p>}
+        <p className="meta auth-links">
+          <a href="#/forgot">Forgot password?</a>
+        </p>
+      </section>
+    </main>
+  );
+}
+
+function formatAuthError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Request failed. Please try again.';
+  }
+  if (error.message.includes('(401)')) {
+    return 'Invalid credentials. Please check your email and password.';
+  }
+  if (error.message.includes('(400)')) {
+    return 'Please review your input and try again.';
+  }
+  return 'Request failed. Please try again.';
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('(401)');
+}
+
+function handleSessionExpired(
+  setAuthUser: Dispatch<SetStateAction<AuthUserView | null>>,
+  setSessionExpired: Dispatch<SetStateAction<boolean>>,
+  setAuthMessage: Dispatch<SetStateAction<string | null>>
+) {
+  setAuthUser(null);
+  setSessionExpired(true);
+  setAuthMessage(null);
+}
+
+function storeIntendedRoute(routeHash: string) {
+  if (!routeHash.startsWith('#/')) {
+    return;
+  }
+  sessionStorage.setItem(INTENDED_ROUTE_KEY, routeHash);
+}
+
+function consumeIntendedRoute(): string {
+  const saved = sessionStorage.getItem(INTENDED_ROUTE_KEY);
+  sessionStorage.removeItem(INTENDED_ROUTE_KEY);
+  if (saved && saved.startsWith('#/')) {
+    return saved;
+  }
+  return '#/';
+}
+
 function applyOptimisticUpdate(snapshot: SignalsSnapshot, envelope: EventEnvelope): SignalsSnapshot {
   switch (envelope.type) {
     case 'WeatherUpdated': {
@@ -667,7 +1012,115 @@ function applyOptimisticUpdate(snapshot: SignalsSnapshot, envelope: EventEnvelop
   }
 }
 
+function applyEnvironmentUpdate(
+  envByZip: Record<string, EnvStatus>,
+  envelope: EventEnvelope
+): Record<string, EnvStatus> {
+  if (envelope.type === 'EnvWeatherUpdated') {
+    const event = envelope.event as Record<string, unknown>;
+    const zip = asString(event.zip) ?? asString(event.location);
+    if (!zip) {
+      return envByZip;
+    }
+
+    const previous = envByZip[zip];
+    const observedAt = toIsoTimestamp(event.observedAt ?? envelope.timestamp);
+    const nextWeather = {
+      temperatureF: asNumber(event.tempF),
+      forecast: asString(event.conditions) ?? previous?.weather.forecast ?? 'Unknown',
+      windSpeed: asString(event.windSpeed) ?? previous?.weather.windSpeed ?? '',
+      observedAt
+    };
+    return {
+      ...envByZip,
+      [zip]: {
+        zip,
+        lat: previous?.lat ?? 0,
+        lon: previous?.lon ?? 0,
+        weather: nextWeather,
+        aqi: previous?.aqi ?? { aqi: null, category: null, observedAt, message: 'AQI unavailable' },
+        updatedAt: observedAt
+      }
+    };
+  }
+
+  if (envelope.type === 'EnvAqiUpdated') {
+    const event = envelope.event as Record<string, unknown>;
+    const zip = asString(event.zip);
+    if (!zip) {
+      return envByZip;
+    }
+    const previous = envByZip[zip];
+    const observedAt = toIsoTimestamp(event.observedAt ?? envelope.timestamp);
+    const eventAqi = asNumber(event.aqi);
+    const nextAqi = eventAqi == null
+      ? {
+        aqi: null,
+        category: asString(event.category),
+        observedAt,
+        message: asString(event.message) ?? 'AQI unavailable'
+      }
+      : {
+        aqi: eventAqi,
+        category: asString(event.category) ?? previous?.aqi.category ?? 'Unknown',
+        observedAt,
+        message: null
+      };
+    return {
+      ...envByZip,
+      [zip]: {
+        zip,
+        lat: previous?.lat ?? 0,
+        lon: previous?.lon ?? 0,
+        weather: previous?.weather ?? {
+          temperatureF: null,
+          forecast: 'Unknown',
+          windSpeed: '',
+          observedAt
+        },
+        aqi: nextAqi,
+        updatedAt: observedAt
+      }
+    };
+  }
+
+  return envByZip;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function toIsoTimestamp(value: unknown): string {
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value * 1000).toISOString();
+  }
+  return new Date().toISOString();
+}
+
 function readRouteFromHash(): RouteName {
+  if (window.location.hash === '#/login') {
+    return 'login';
+  }
+  if (window.location.hash === '#/signup') {
+    return 'signup';
+  }
+  if (window.location.hash.startsWith('#/reset')) {
+    return 'reset';
+  }
+  if (window.location.hash === '#/forgot') {
+    return 'forgot';
+  }
   if (window.location.hash === '#/admin') {
     return 'admin';
   }
@@ -675,6 +1128,16 @@ function readRouteFromHash(): RouteName {
     return 'settings';
   }
   return 'home';
+}
+
+function readResetTokenFromHash(): string | null {
+  const hash = window.location.hash;
+  const marker = 'token=';
+  const index = hash.indexOf(marker);
+  if (index < 0) {
+    return null;
+  }
+  return decodeURIComponent(hash.substring(index + marker.length));
 }
 
 function weatherIcon(conditions: string): string {

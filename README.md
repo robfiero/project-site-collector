@@ -92,6 +92,9 @@ cd backend
 - `mvn -pl service -am test`
   - Run `service` tests and build required dependent modules.
 
+- `mvn -pl service test`
+  - Run only `service` module tests (uses currently available module artifacts).
+
 ### Run backend
 
 - `mvn -pl service -am -DskipTests exec:java`
@@ -162,6 +165,30 @@ The backend keeps secure defaults:
 - no trust-all SSL context
 - no hostname verification bypass
 
+## Environment Data (`/api/env`)
+
+Backend environment status endpoint:
+
+- `GET /api/env?zips=02108,98101`
+- If `zips` is omitted, backend uses default ZIPs from catalog defaults.
+
+What it returns per ZIP:
+
+- NOAA weather summary (`temperatureF`, `forecast`, `windSpeed`, timestamps)
+- AirNow AQI (`aqi`, `category`) when available
+- fallback message `"AQI unavailable"` when AirNow key is not configured
+
+ZIP geocoding:
+
+- ZIP -> lat/lon is resolved on-demand via TIGERweb ZCTA query
+- Coordinates are cached server-side in `backend/data/zip-geo.json`
+- Resolver prefers `INTPTLAT/INTPTLON` and falls back to `CENTLAT/CENTLON`
+
+Optional env vars:
+
+- `AIRNOW_API_KEY` (optional; without it, weather still works and AQI is marked unavailable)
+- `NOAA_USER_AGENT` (optional; defaults to `todays-overview/0.1 (contact: support@example.com)`)
+
 ## Notes on Java 25 Preview
 
 This project is configured for preview APIs (Structured Concurrency) across:
@@ -207,8 +234,23 @@ Latest coverage snapshot (from `mvn clean verify` on February 17, 2026):
   - JWT in HttpOnly cookie
   - SameSite=Lax
   - Secure cookie enabled in prod mode
+  - `APP_ENV` supports `dev|prod` (default `dev`; unknown values warn and default to `dev`)
+  - `AUTH_ENABLED` supports `true|false` (default `true`)
+    - when `AUTH_ENABLED=false`, auth endpoints are disabled (`404`) and Home/Admin still work anonymously
 - Passwords:
   - Argon2id hashing via Jargon2 RI backend
+  - On Apple Silicon/macOS arm64, `com.kosprov.jargon2` native RI binaries may be unavailable
+  - In `APP_ENV=dev`, service startup automatically falls back to a secure PBKDF2 hasher (pure Java) when native Argon2 is unavailable
+  - In `APP_ENV=prod`, Argon2 native backend remains required and startup fails fast when unavailable
+  - The native `PasswordHasherTest` may skip by design on unsupported architectures; this is expected
+  - A portable PBKDF2 password hasher test always runs to validate hash/verify behavior
+  - Quick check: `cd backend && mvn -pl service -am test -Dtest=PasswordHasherTest`
+  - Service-only tests: `cd backend && mvn -pl service test`
+  - Surefire reports (including skip reasons): `backend/service/target/surefire-reports/`
+  - Startup also validates availability:
+    - `APP_ENV=prod` + auth enabled: fail fast if unavailable
+    - `APP_ENV=dev` + auth enabled: auto-fallback to PBKDF2 when unavailable
+    - `ALLOW_INSECURE_AUTH_HASHER` is legacy; no longer required for normal dev startup
 - Password reset:
   - `POST /api/auth/forgot` returns generic `200` for both existing and non-existing emails
   - reset tokens are hashed, expiring, and one-time-use
@@ -229,7 +271,7 @@ To customize:
 An end-to-end auth/reset/preferences demo script is included:
 
 ```bash
-./scripts/demo-phase6.sh
+./demo-phase6.sh
 ```
 
 Optional environment overrides:
@@ -239,7 +281,7 @@ BASE_URL=http://localhost:8080 \
 EMAIL=demo+custom@example.com \
 PASSWORD='Demo!Phase6#Pass123' \
 NEW_PASSWORD='Demo!Phase6#Pass456' \
-./scripts/demo-phase6.sh
+./demo-phase6.sh
 ```
 
 What it verifies:

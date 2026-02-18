@@ -47,12 +47,21 @@ This includes SSE via `EventSource('/api/stream')`.
 ## Routes
 
 - Home (default): `#/`
+- Login: `#/login`
+- Sign up: `#/signup`
+- Forgot password: `#/forgot`
+- Reset password: `#/reset?token=...`
+- Settings (authenticated only): `#/settings`
 - Admin / Diagnostics: `#/admin`
 
 Use the top navigation to switch pages.
 
-## Places + Watchlist (Phase 5 behavior)
+## Preferences Behavior
 
-- Places ZIPs (up to 10) and Markets watchlist are stored in browser `localStorage`.
-- These preferences are not stored on the backend yet.
-- AQI / Local Happenings / Markets cards can render demo values when backend integrations are unavailable.
+- Anonymous users:
+  - Home/Admin available
+  - defaults + local browser preferences
+- Logged-in users:
+  - Settings route enabled
+  - Places/watchlist/preferences loaded from and saved to `/api/me/preferences`
+  - settings are server-side (not localStorage-driven)

@@ -11,6 +11,11 @@ import com.signalsentinel.collectors.api.Collector;
 import com.signalsentinel.collectors.api.CollectorContext;
 import com.signalsentinel.collectors.api.CollectorResult;
 import com.signalsentinel.service.store.EventCodec;
+import com.signalsentinel.service.env.AirNowAqiSnapshot;
+import com.signalsentinel.service.env.EnvService;
+import com.signalsentinel.service.env.NoaaWeatherSnapshot;
+import com.signalsentinel.service.env.ZipGeoRecord;
+import com.signalsentinel.service.env.ZipGeoStore;
 import com.signalsentinel.service.store.JsonFileSignalStore;
 import com.signalsentinel.service.store.JsonlEventStore;
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.ZoneOffset;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -311,6 +317,59 @@ class ApiServerIntegrationTest {
     }
 
     @Test
+    void envEndpointReturnsEnvironmentForRequestedZips() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/env?zips=02108,98101")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, response.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(response.body());
+        assertEquals(2, body.size());
+        assertEquals("02108", body.get(0).get("zip").asText());
+        assertEquals(72.0, body.get(0).get("weather").get("temperatureF").asDouble());
+        assertEquals("AQI unavailable", body.get(0).get("aqi").get("message").asText());
+    }
+
+    @Test
+    void authEndpointsReturnNotFoundWhenAuthDisabled() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> signupResponse = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/auth/signup"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"email\":\"a@example.com\",\"password\":\"secret\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(404, signupResponse.statusCode());
+
+        HttpResponse<String> meResponse = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(404, meResponse.statusCode());
+
+        HttpResponse<String> prefsResponse = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/preferences")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(404, prefsResponse.statusCode());
+
+        HttpResponse<String> logoutResponse = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/auth/logout"))
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(404, logoutResponse.statusCode());
+    }
+
+    @Test
     void nonGetMethodsReturn405() throws Exception {
         TestRuntime runtime = startRuntime();
         HttpClient client = HttpClient.newHttpClient();
@@ -568,7 +627,22 @@ class ApiServerIntegrationTest {
                 "rss", Map.of("interval", "PT60S", "sources", List.of()),
                 "weather", Map.of("interval", "PT60S", "locations", List.of())
         );
-        apiServer = new ApiServer(0, signalStore, eventStore, broadcaster, collectors, diagnosticsTracker, defaults, config);
+        EnvService envService = new EnvService(
+                new ZipGeoStore(tempDir.resolve("data/zip-geo.json")),
+                zip -> new ZipGeoRecord(zip, 42.0, -71.0, Instant.parse("2026-02-12T20:00:00Z"), "tigerweb_zcta"),
+                (lat, lon) -> new NoaaWeatherSnapshot(
+                        72.0,
+                        "Sunny",
+                        "5 mph",
+                        Instant.parse("2026-02-12T20:00:00Z"),
+                        "https://api.weather.gov/mock-forecast",
+                        "2026-02-12T20:00:00Z"
+                ),
+                zip -> java.util.Optional.empty(),
+                Clock.fixed(Instant.parse("2026-02-12T20:00:00Z"), ZoneOffset.UTC),
+                List.of("02108", "98101")
+        );
+        apiServer = new ApiServer(0, signalStore, eventStore, broadcaster, collectors, diagnosticsTracker, defaults, config, null, envService, false, false, null);
         apiServer.start();
 
         return new TestRuntime(apiServer.actualPort(), signalStore, eventStore, eventBus, broadcaster);

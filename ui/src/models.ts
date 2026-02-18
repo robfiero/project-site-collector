@@ -5,7 +5,15 @@ export type EventType =
   | 'ContentChanged'
   | 'NewsUpdated'
   | 'WeatherUpdated'
-  | 'AlertRaised';
+  | 'EnvWeatherUpdated'
+  | 'EnvAqiUpdated'
+  | 'AlertRaised'
+  | 'UserRegistered'
+  | 'LoginSucceeded'
+  | 'LoginFailed'
+  | 'PasswordResetRequested'
+  | 'PasswordResetSucceeded'
+  | 'PasswordResetFailed';
 
 export interface BaseEvent {
   type: EventType;
@@ -53,6 +61,39 @@ export interface WeatherUpdatedEvent extends BaseEvent {
   conditions: string;
 }
 
+export interface EnvWeatherUpdatedEvent extends BaseEvent {
+  type: 'EnvWeatherUpdated';
+  zip: string;
+  locationLabel?: string | null;
+  lat: number;
+  lon: number;
+  tempF: number;
+  conditions: string;
+  source: string;
+  fetchedAtEpochMillis: number;
+  status: 'OK' | 'PARTIAL' | 'UNAVAILABLE';
+  error?: string | null;
+  requestUrl: string;
+  observationTime?: string | null;
+}
+
+export interface EnvAqiUpdatedEvent extends BaseEvent {
+  type: 'EnvAqiUpdated';
+  zip: string;
+  locationLabel?: string | null;
+  lat: number;
+  lon: number;
+  aqi: number | null;
+  category: string | null;
+  message: string | null;
+  source: string;
+  fetchedAtEpochMillis: number;
+  status: 'OK' | 'PARTIAL' | 'UNAVAILABLE';
+  error?: string | null;
+  requestUrl: string;
+  validDateTime?: string | null;
+}
+
 export interface AlertRaisedEvent extends BaseEvent {
   type: 'AlertRaised';
   category: string;
@@ -67,6 +108,8 @@ export type SignalEvent =
   | ContentChangedEvent
   | NewsUpdatedEvent
   | WeatherUpdatedEvent
+  | EnvWeatherUpdatedEvent
+  | EnvAqiUpdatedEvent
   | AlertRaisedEvent;
 
 export interface NewsStory {
@@ -153,4 +196,27 @@ export interface CatalogDefaults {
   defaultZipCodes: string[];
   defaultNewsSources: Array<{ id: string; name: string; url: string; category: string }>;
   defaultWatchlist: string[];
+}
+
+export interface EnvWeather {
+  temperatureF: number | null;
+  forecast: string;
+  windSpeed: string;
+  observedAt: string;
+}
+
+export interface EnvAqi {
+  aqi: number | null;
+  category: string | null;
+  observedAt: string;
+  message: string | null;
+}
+
+export interface EnvStatus {
+  zip: string;
+  lat: number;
+  lon: number;
+  weather: EnvWeather;
+  aqi: EnvAqi;
+  updatedAt: string;
 }

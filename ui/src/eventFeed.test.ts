@@ -53,7 +53,7 @@ describe('summarizeEvent', () => {
     expect(summarizeEvent(completed)).toBe('collector siteCollector ok in 1234ms');
   });
 
-  it('summarizes alerts, site fetch, and weather updates', () => {
+  it('summarizes alerts, site fetch, weather, and env updates', () => {
     const alert: EventEnvelope = {
       type: 'AlertRaised',
       timestamp: 1700000000,
@@ -69,9 +69,50 @@ describe('summarizeEvent', () => {
       timestamp: 1700000000,
       event: { location: 'Boston', tempF: 37.4, conditions: 'Cloudy' }
     };
+    const envWeather: EventEnvelope = {
+      type: 'EnvWeatherUpdated',
+      timestamp: 1700000000,
+      event: {
+        zip: '02108',
+        lat: 42.35,
+        lon: -71.06,
+        tempF: 37.4,
+        conditions: 'Cloudy',
+        source: 'NOAA',
+        fetchedAtEpochMillis: 1700000000000,
+        status: 'OK',
+        error: null,
+        requestUrl: 'https://api.weather.gov/gridpoints/BOX/70,76/forecast?units=us',
+        observationTime: '2026-02-18T10:00:00Z'
+      }
+    };
+    const envAqi: EventEnvelope = {
+      type: 'EnvAqiUpdated',
+      timestamp: 1700000000,
+      event: {
+        zip: '02108',
+        lat: 42.35,
+        lon: -71.06,
+        aqi: 42,
+        category: 'Good',
+        message: null,
+        source: 'airnow',
+        fetchedAtEpochMillis: 1700000000000,
+        status: 'OK',
+        error: null,
+        requestUrl: 'https://www.airnowapi.org/aq/observation/zipCode/current/?zipCode=02108&distance=25',
+        validDateTime: '2026-02-18 10:00'
+      }
+    };
     expect(summarizeEvent(alert)).toBe('collector: dns failure');
     expect(summarizeEvent(siteFetched)).toBe('docs: status 200, 55ms');
     expect(summarizeEvent(weather)).toBe('Boston: 37.4F, Cloudy');
+    expect(summarizeEvent(envWeather)).toContain('02108: 37.4F, Cloudy');
+    expect(summarizeEvent(envWeather)).toContain('(NOAA)');
+    expect(summarizeEvent(envWeather)).toContain('[api.weather.gov/gridpoints/BOX/70,76/forecast]');
+    expect(summarizeEvent(envAqi)).toContain('02108: AQI 42 (Good)');
+    expect(summarizeEvent(envAqi)).toContain('via AIRNOW');
+    expect(summarizeEvent(envAqi)).toContain('[www.airnowapi.org/aq/observation/zipCode/current/]');
   });
 });
 

@@ -3,6 +3,8 @@ import type {
   CollectorTickCompletedEvent,
   CollectorTickStartedEvent,
   ContentChangedEvent,
+  EnvAqiUpdatedEvent,
+  EnvWeatherUpdatedEvent,
   EventEnvelope,
   NewsUpdatedEvent,
   SiteFetchedEvent,
@@ -14,6 +16,27 @@ export function summarizeEvent(envelope: EventEnvelope): string {
     case 'WeatherUpdated': {
       const e = envelope.event as unknown as WeatherUpdatedEvent;
       return `${e.location}: ${e.tempF.toFixed(1)}F, ${e.conditions}`;
+    }
+    case 'EnvWeatherUpdated': {
+      const e = envelope.event as unknown as EnvWeatherUpdatedEvent;
+      const when = formatFetchedAtMillis(e.fetchedAtEpochMillis);
+      const endpoint = shortenRequestUrl(e.requestUrl);
+      if (e.status !== 'OK') {
+        return `${e.zip}: weather ${e.status.toLowerCase()} (${normalizeSource(e.source)}) @ ${when} - ${e.error ?? 'unavailable'} [${endpoint}]`;
+      }
+      return `${e.zip}: ${e.tempF.toFixed(1)}F, ${e.conditions} (${normalizeSource(e.source)}) @ ${when} [${endpoint}]`;
+    }
+    case 'EnvAqiUpdated': {
+      const e = envelope.event as unknown as EnvAqiUpdatedEvent;
+      const when = formatFetchedAtMillis(e.fetchedAtEpochMillis);
+      const endpoint = shortenRequestUrl(e.requestUrl);
+      if (e.status !== 'OK') {
+        return `${e.zip}: AQI ${e.status.toLowerCase()} (${normalizeSource(e.source)}) @ ${when} - ${e.error ?? e.message ?? 'unavailable'} [${endpoint}]`;
+      }
+      if (e.aqi == null) {
+        return `${e.zip}: ${e.message ?? 'AQI unavailable'} (${normalizeSource(e.source)}) @ ${when} [${endpoint}]`;
+      }
+      return `${e.zip}: AQI ${e.aqi} (${e.category ?? 'Unknown'}) via ${normalizeSource(e.source)} @ ${when} [${endpoint}]`;
     }
     case 'NewsUpdated': {
       const e = envelope.event as unknown as NewsUpdatedEvent;
@@ -39,8 +62,61 @@ export function summarizeEvent(envelope: EventEnvelope): string {
       const e = envelope.event as unknown as CollectorTickCompletedEvent;
       return `collector ${e.collectorName} ${e.success ? 'ok' : 'failed'} in ${e.durationMillis}ms`;
     }
+    case 'UserRegistered':
+      return 'user registered';
+    case 'LoginSucceeded':
+      return 'login succeeded';
+    case 'LoginFailed':
+      return 'login failed';
+    case 'PasswordResetRequested':
+      return 'password reset requested';
+    case 'PasswordResetSucceeded':
+      return 'password reset succeeded';
+    case 'PasswordResetFailed':
+      return 'password reset failed';
     default:
       return envelope.type;
+  }
+}
+
+function formatFetchedAtMillis(value: unknown): string {
+  const ms = toEpochMillis(value);
+  if (!Number.isFinite(ms)) {
+    return '-';
+  }
+  return new Date(ms).toLocaleTimeString();
+}
+
+function toEpochMillis(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const numeric = Number.parseFloat(value);
+    if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return Number.NaN;
+}
+
+function normalizeSource(source: unknown): string {
+  if (typeof source !== 'string' || source.trim().length === 0) {
+    return 'UNKNOWN';
+  }
+  return source.toUpperCase();
+}
+
+function shortenRequestUrl(rawUrl: unknown): string {
+  if (typeof rawUrl !== 'string' || rawUrl.trim().length === 0) {
+    return 'request-url:n/a';
+  }
+  try {
+    const parsed = new URL(rawUrl);
+    return `${parsed.host}${parsed.pathname}`;
+  } catch {
+    const withoutQuery = rawUrl.split('?')[0];
+    return withoutQuery;
   }
 }
 

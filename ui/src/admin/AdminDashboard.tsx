@@ -2,6 +2,7 @@ import { formatDateTimeValue } from '../utils/date';
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { CatalogDefaults, CollectorStatus, EventEnvelope, MetricsResponse, SignalsSnapshot } from '../models';
+import type { AuthUserView, DevOutboxEmail } from '../api';
 import KpiCard from './KpiCard';
 import CollectorStatusCard from './CollectorStatusCard';
 import ConfigCard from './ConfigCard';
@@ -27,6 +28,8 @@ type AdminDashboardProps = {
   maxEvents: number;
   paused: boolean;
   onTogglePause: () => void;
+  devOutbox: DevOutboxEmail[];
+  currentUser: AuthUserView | null;
 };
 
 export default function AdminDashboard(props: AdminDashboardProps) {
@@ -63,6 +66,16 @@ export default function AdminDashboard(props: AdminDashboardProps) {
         <p className="empty">Event and collector trend charts will appear here in a future release.</p>
       </section>
 
+      <section className="card collector-card">
+        <h2 className="section-title">Current user</h2>
+        <p className="meta section-description">Session visibility for demo and diagnostics.</p>
+        {props.currentUser ? (
+          <p className="meta"><strong>{props.currentUser.email}</strong> ({props.currentUser.id})</p>
+        ) : (
+          <p className="empty">Anonymous session</p>
+        )}
+      </section>
+
       <CollectorStatusCard collectorStatus={props.collectorStatus} />
       <ConfigCard catalogDefaults={props.catalogDefaults} configView={props.configView} />
 
@@ -95,6 +108,40 @@ export default function AdminDashboard(props: AdminDashboardProps) {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <h2 className="section-title">Email Outbox (dev)</h2>
+        <p className="meta section-description">Development-only email capture for reset/signup flows.</p>
+        {props.devOutbox.length === 0 ? (
+          <p className="empty">No dev emails yet.</p>
+        ) : (
+          <div className="card-body">
+            {props.devOutbox.map((email, idx) => (
+              <article key={`${email.createdAt}-${idx}`} className="item">
+                <h3>{email.subject}</h3>
+                <p className="meta">To: {email.to}</p>
+                <p className="meta">{email.createdAt}</p>
+                {email.links?.[0] && (
+                  <div className="outbox-actions">
+                    <a href={email.links[0]} target="_blank" rel="noreferrer">Open reset link</a>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!navigator?.clipboard?.writeText) {
+                          return;
+                        }
+                        await navigator.clipboard.writeText(email.links[0]);
+                      }}
+                    >
+                      Copy link
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))}
           </div>
         )}
       </section>
