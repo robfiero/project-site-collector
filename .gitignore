@@ -21,3 +21,16 @@ ui/dist/
 ui/node_modules/
 ui/.vitest/
 ui/.cache/
+
+# IDE / editor
+.vscode/
+
+# Local runtime artifacts
+backend/logs/
+backend/state/
+
+# Maven wrapper / local tooling
+backend/.mvn/
+
+# TS incremental build artifact
+ui/tsconfig.tsbuildinfo
