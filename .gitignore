@@ -1,0 +1,23 @@
+*.class
+*.log
+.DS_Store
+
+# Explicit recursive hygiene patterns
+**/backend/**/target/
+**/backend/target/
+**/ui/dist/
+**/ui/node_modules/
+**/ui/.vitest/
+**/ui/.cache/
+**/backend/data/**
+**/*.log
+**/.DS_Store
+
+backend/target/
+backend/**/target/
+backend/data/**
+
+ui/dist/
+ui/node_modules/
+ui/.vitest/
+ui/.cache/

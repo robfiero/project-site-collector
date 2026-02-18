@@ -183,29 +183,38 @@ Where reports are generated:
   - `backend/collectors/target/site/jacoco/index.html`
   - `backend/service/target/site/jacoco/index.html`
 
-Latest coverage snapshot (from `mvn clean verify` on February 15, 2026):
+Latest coverage snapshot (from `mvn clean verify` on February 17, 2026):
 
-- `core`: instruction 89.0%, line 93.9%
+- `core`: instruction 77.3%, line 81.9%
 - `collectors`: instruction 90.0%, line 91.0%
-- `service`: instruction 76.5%, line 73.0%
+- `service`: instruction 77.8%, line 74.7%
 
 ## UI Routes
 
 - `#/` Home dashboard (default)
-  - Weather, News, Sites
-  - Air Quality / Local Happenings / Markets framework cards (demo-capable)
-  - Places (ZIP list) and Markets watchlist editors
+- `#/login`, `#/signup`, `#/forgot`, `#/reset?token=...`
+- `#/settings` (authenticated users only; anonymous users are redirected to `#/login`)
 - `#/admin` Admin / Diagnostics
-  - Live event feed (filters + search + expandable JSON)
-  - Metrics, Collector Status, Defaults, and read-only Config panels
 
-## Phase 5 Notes
+## Auth + Preferences (Phase 6)
 
-- No login/auth yet.
-- Places ZIPs and Markets watchlist are client-side only for now:
-  - stored in browser `localStorage`
-  - not persisted server-side
-- AQI/Local/Markets cards may show demo data until Phase 6 data integrations are enabled.
+- Anonymous users can access Home/Admin with defaults.
+- Authenticated users get:
+  - Settings route in nav
+  - server-side preferences via `/api/me/preferences`
+  - account menu with sign-out
+- Auth/session:
+  - JWT in HttpOnly cookie
+  - SameSite=Lax
+  - Secure cookie enabled in prod mode
+- Passwords:
+  - Argon2id hashing via Jargon2 RI backend
+- Password reset:
+  - `POST /api/auth/forgot` returns generic `200` for both existing and non-existing emails
+  - reset tokens are hashed, expiring, and one-time-use
+- Email:
+  - default dev outbox sender (zero setup)
+  - optional SMTP sender via environment variables
 
 ## Replacing Demo Sources
 
@@ -214,3 +223,36 @@ Default demo config ships with trusted HTTPS endpoints (for example `https://www
 To customize:
 - edit `backend/config/sites.json` and `backend/config/rss.json` (and `backend/service/config/*` if you run directly from `backend/service`)
 - restart backend after config changes
+
+## Phase 6 Demo
+
+An end-to-end auth/reset/preferences demo script is included:
+
+```bash
+./scripts/demo-phase6.sh
+```
+
+Optional environment overrides:
+
+```bash
+BASE_URL=http://localhost:8080 \
+EMAIL=demo+custom@example.com \
+PASSWORD='Demo!Phase6#Pass123' \
+NEW_PASSWORD='Demo!Phase6#Pass456' \
+./scripts/demo-phase6.sh
+```
+
+What it verifies:
+- anonymous `/api/health`
+- signup + cookie login
+- `/api/me` success while authenticated
+- preferences PUT/GET round-trip
+- logout then `/api/me` returns `401`
+- forgot-password + dev outbox reset-link extraction
+- password reset with token
+- login using new password and `/api/me` success
+
+Notes:
+- backend must be running first (`cd backend && ./run-service.sh`)
+- script uses `/api/dev/outbox` (dev mode required)
+- uses `jq` when available; otherwise falls back to `python3` JSON parsing
