@@ -87,19 +87,6 @@ function formatFetchedAtMillis(value: unknown): string {
   return new Date(ms).toLocaleTimeString();
 }
 
-function toEpochMillis(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const numeric = Number.parseFloat(value);
-    if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
-      return numeric;
-    }
-  }
-  return Number.NaN;
-}
-
 function normalizeSource(source: unknown): string {
   if (typeof source !== 'string' || source.trim().length === 0) {
     return 'UNKNOWN';
@@ -133,12 +120,13 @@ export function normalizeEventEnvelope(input: unknown): EventEnvelope | null {
     return null;
   }
 
-  const timestamp = toEpochSeconds(raw.timestamp ?? payload.timestamp);
+  const timestampEpochMillis = toEpochMillis(raw.timestampEpochMillis ?? raw.timestamp ?? payload.timestamp);
   const eventPayload = { ...payload } as Record<string, unknown>;
 
   return {
     type: typeValue,
-    timestamp,
+    timestampEpochMillis,
+    timestamp: timestampEpochMillis,
     event: eventPayload
   };
 }
@@ -160,19 +148,19 @@ export function filterEvents(
     });
 }
 
-export function toEpochSeconds(value: unknown): number {
+export function toEpochMillis(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
+    return value > 10_000_000_000 ? value : value * 1000;
   }
   if (typeof value === 'string') {
     const numeric = Number.parseFloat(value);
     if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
-      return numeric;
+      return numeric > 10_000_000_000 ? numeric : numeric * 1000;
     }
     const ms = Date.parse(value);
     if (!Number.isNaN(ms)) {
-      return ms / 1000;
+      return ms;
     }
   }
-  return Date.now() / 1000;
+  return Date.now();
 }

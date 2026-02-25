@@ -8,6 +8,8 @@ public record NoaaWeatherSnapshot(
         String windSpeed,
         Instant observedAt,
         String requestUrl,
-        String observationTime
+        String observationTime,
+        String city,
+        String state
 ) {
 }

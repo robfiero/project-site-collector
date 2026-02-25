@@ -43,6 +43,20 @@ What it does:
 What it does:
 - Runs `service` tests and also builds required dependencies (`mvn -pl service -am test`).
 
+### Coverage baseline (backend + UI)
+
+- `./coverage-baseline.sh`
+
+What it does:
+- Runs backend tests (`mvn -q test`) and generates JaCoCo reports.
+- Runs UI coverage (`npm run test:coverage`).
+- Prints a concise baseline summary:
+  - backend/core line + branch
+  - backend/collectors line + branch
+  - backend/service line + branch
+  - overall backend weighted line + branch
+  - UI line + branch + function
+
 ### Run backend service
 
 - `./backend/run-service.sh`
@@ -189,6 +203,41 @@ Optional env vars:
 - `AIRNOW_API_KEY` (optional; without it, weather still works and AQI is marked unavailable)
 - `NOAA_USER_AGENT` (optional; defaults to `todays-overview/0.1 (contact: support@example.com)`)
 
+## Local What's Happening (Ticketmaster)
+
+`Local What’s Happening` is powered by the Ticketmaster Discovery API v2 and the UI includes attribution text: `Powered by Ticketmaster`.
+
+Required env vars:
+
+- `TICKETMASTER_API_KEY`
+
+Optional env vars:
+
+- `TICKETMASTER_BASE_URL` (default: `https://app.ticketmaster.com/discovery/v2`)
+- `TICKETMASTER_RADIUS_MILES` (default: `25`)
+- `TICKETMASTER_CLASSIFICATIONS` (comma-separated, for example `music,sports,arts`)
+
+Location source:
+
+- Local events are fetched per ZIP code using the same effective ZIP set as Environment (authenticated user preferences merged with catalog defaults; anonymous users use catalog defaults).
+
+Startup behavior:
+
+- If `TICKETMASTER_API_KEY` is missing, `localEventsCollector` is disabled and startup logs a clear warning.
+
+## Top News RSS Sources
+
+Configured RSS sources in `backend/config/rss.json` include:
+
+- `nbc` (`https://feeds.nbcnews.com/nbcnews/public/news`)
+- `cbs` (`https://www.cbsnews.com/latest/rss/main`)
+- `abc`, `cnn`, `fox`, `wsj`, `verge`, and NPR/NYT sources already in config
+
+Reliability note:
+
+- AP (`feeds.apnews.com`) was removed due to recurring feed instability and replaced with NBC News + CBS News.
+- Politico (`www.politico.com/rss/politicopicks.xml`) was removed due to recurring 403/access restrictions and replaced with ABC News.
+
 ## Notes on Java 25 Preview
 
 This project is configured for preview APIs (Structured Concurrency) across:
@@ -210,11 +259,22 @@ Where reports are generated:
   - `backend/collectors/target/site/jacoco/index.html`
   - `backend/service/target/site/jacoco/index.html`
 
-Latest coverage snapshot (from `mvn clean verify` on February 17, 2026):
+Run backend coverage manually:
 
-- `core`: instruction 77.3%, line 81.9%
-- `collectors`: instruction 90.0%, line 91.0%
-- `service`: instruction 77.8%, line 74.7%
+- `cd backend && mvn test`
+- `cd backend && mvn -pl core,collectors,service -am -DskipTests jacoco:report`
+
+Run UI coverage manually:
+
+- `cd ui && npm run test:coverage`
+
+UI HTML report location:
+
+- `ui/coverage/index.html`
+
+Run combined backend + UI baseline:
+
+- `./coverage-baseline.sh`
 
 ## UI Routes
 

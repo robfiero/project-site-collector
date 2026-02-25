@@ -3,6 +3,12 @@ package com.signalsentinel.service.api;
 import com.signalsentinel.collectors.api.Collector;
 import com.signalsentinel.core.events.Event;
 import com.signalsentinel.core.util.JsonUtils;
+import com.signalsentinel.service.auth.AuthMiddleware;
+import com.signalsentinel.service.auth.AuthService;
+import com.signalsentinel.service.auth.AuthUser;
+import com.signalsentinel.service.auth.UserPreferences;
+import com.signalsentinel.service.email.DevOutboxEmailSender;
+import com.signalsentinel.service.env.EnvService;
 import com.signalsentinel.service.store.EventStore;
 import com.signalsentinel.service.store.ServiceSignalStore;
 import com.sun.net.httpserver.HttpExchange;
@@ -16,14 +22,22 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 public class ApiServer {
     private static final DiagnosticsTracker EMPTY_DIAGNOSTICS = DiagnosticsTracker.empty();
+    private static final Logger LOGGER = Logger.getLogger(ApiServer.class.getName());
+    private static final List<String> AUTH_TRANSITION_REFRESH_COLLECTORS = List.of("envCollector", "rssCollector", "localEventsCollector");
 
     private final int port;
     private final ServiceSignalStore signalStore;
@@ -33,6 +47,12 @@ public class ApiServer {
     private final DiagnosticsTracker diagnosticsTracker;
     private final Map<String, Object> catalogDefaults;
     private final Map<String, Object> configView;
+    private final AuthService authService;
+    private final EnvService envService;
+    private final boolean secureCookies;
+    private final boolean devOutboxEnabled;
+    private final DevOutboxEmailSender devOutboxEmailSender;
+    private volatile Consumer<List<String>> collectorRefreshHook;
 
     private HttpServer server;
 
@@ -51,7 +71,12 @@ public class ApiServer {
                 collectors,
                 null,
                 Map.of(),
-                Map.of()
+                Map.of(),
+                null,
+                null,
+                false,
+                false,
+                null
         );
     }
 
@@ -65,6 +90,38 @@ public class ApiServer {
             Map<String, Object> catalogDefaults,
             Map<String, Object> configView
     ) {
+        this(
+                port,
+                signalStore,
+                eventStore,
+                sseBroadcaster,
+                collectors,
+                diagnosticsTracker,
+                catalogDefaults,
+                configView,
+                null,
+                null,
+                false,
+                false,
+                null
+        );
+    }
+
+    public ApiServer(
+            int port,
+            ServiceSignalStore signalStore,
+            EventStore eventStore,
+            SseBroadcaster sseBroadcaster,
+            List<Collector> collectors,
+            DiagnosticsTracker diagnosticsTracker,
+            Map<String, Object> catalogDefaults,
+            Map<String, Object> configView,
+            AuthService authService,
+            EnvService envService,
+            boolean secureCookies,
+            boolean devOutboxEnabled,
+            DevOutboxEmailSender devOutboxEmailSender
+    ) {
         this.port = port;
         this.signalStore = signalStore;
         this.eventStore = eventStore;
@@ -73,6 +130,42 @@ public class ApiServer {
         this.diagnosticsTracker = diagnosticsTracker;
         this.catalogDefaults = catalogDefaults;
         this.configView = configView;
+        this.authService = authService;
+        this.envService = envService;
+        this.secureCookies = secureCookies;
+        this.devOutboxEnabled = devOutboxEnabled;
+        this.devOutboxEmailSender = devOutboxEmailSender;
+    }
+
+    public ApiServer(
+            int port,
+            ServiceSignalStore signalStore,
+            EventStore eventStore,
+            SseBroadcaster sseBroadcaster,
+            List<Collector> collectors,
+            DiagnosticsTracker diagnosticsTracker,
+            Map<String, Object> catalogDefaults,
+            Map<String, Object> configView,
+            AuthService authService,
+            boolean secureCookies,
+            boolean devOutboxEnabled,
+            DevOutboxEmailSender devOutboxEmailSender
+    ) {
+        this(
+                port,
+                signalStore,
+                eventStore,
+                sseBroadcaster,
+                collectors,
+                diagnosticsTracker,
+                catalogDefaults,
+                configView,
+                authService,
+                null,
+                secureCookies,
+                devOutboxEnabled,
+                devOutboxEmailSender
+        );
     }
 
     public void start() {
@@ -83,10 +176,21 @@ public class ApiServer {
             server.createContext("/api/signals", this::handleSignals);
             server.createContext("/api/events", this::handleEvents);
             server.createContext("/api/collectors", this::handleCollectors);
+            server.createContext("/api/collectors/refresh", this::handleCollectorRefresh);
             server.createContext("/api/collectors/status", this::handleCollectorStatus);
             server.createContext("/api/metrics", this::handleMetrics);
             server.createContext("/api/catalog/defaults", this::handleCatalogDefaults);
+            server.createContext("/api/settings/newsSources", this::handleNewsSourceSettings);
             server.createContext("/api/config", this::handleConfig);
+            server.createContext("/api/env", this::handleEnvironment);
+            server.createContext("/api/auth/signup", this::handleSignup);
+            server.createContext("/api/auth/login", this::handleLogin);
+            server.createContext("/api/auth/logout", this::handleLogout);
+            server.createContext("/api/auth/forgot", this::handleForgotPassword);
+            server.createContext("/api/auth/reset", this::handleResetPassword);
+            server.createContext("/api/me", this::handleMe);
+            server.createContext("/api/me/preferences", this::handlePreferences);
+            server.createContext("/api/dev/outbox", this::handleDevOutbox);
             server.createContext("/api/stream", sseBroadcaster::handle);
             server.start();
         } catch (IOException e) {
@@ -107,6 +211,10 @@ public class ApiServer {
         return server.getAddress().getPort();
     }
 
+    public void setCollectorRefreshHook(Consumer<List<String>> collectorRefreshHook) {
+        this.collectorRefreshHook = collectorRefreshHook;
+    }
+
     private void handleHealth(HttpExchange exchange) throws IOException {
         if (!ensureGet(exchange, true)) {
             return;
@@ -118,7 +226,38 @@ public class ApiServer {
         if (!ensureGet(exchange, true)) {
             return;
         }
-        writeJson(exchange, 200, signalStore.getAllSignals());
+        Map<String, Object> snapshot = new HashMap<>(signalStore.getAllSignals());
+        Object news = snapshot.get("news");
+        if (news instanceof Map<?, ?> newsMap) {
+            Set<String> selected = effectiveSelectedNewsSources(exchange);
+            Map<String, Object> filtered = new HashMap<>();
+            for (Map.Entry<?, ?> entry : newsMap.entrySet()) {
+                if (!(entry.getKey() instanceof String sourceId)) {
+                    continue;
+                }
+                if (!selected.isEmpty() && !selected.contains(sourceId)) {
+                    continue;
+                }
+                filtered.put(sourceId, entry.getValue());
+            }
+            snapshot.put("news", filtered);
+        }
+        Object localHappenings = snapshot.get("localHappenings");
+        if (localHappenings instanceof Map<?, ?> happeningsMap) {
+            Set<String> allowedZips = effectiveZipCodes(exchange);
+            Map<String, Object> filtered = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : happeningsMap.entrySet()) {
+                if (!(entry.getKey() instanceof String zip)) {
+                    continue;
+                }
+                if (!allowedZips.isEmpty() && !allowedZips.contains(zip)) {
+                    continue;
+                }
+                filtered.put(zip, entry.getValue());
+            }
+            snapshot.put("localHappenings", filtered);
+        }
+        writeJson(exchange, 200, snapshot);
     }
 
     private void handleEvents(HttpExchange exchange) throws IOException {
@@ -157,6 +296,32 @@ public class ApiServer {
         writeJson(exchange, 200, dto);
     }
 
+    private void handleCollectorRefresh(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        Consumer<List<String>> hook = collectorRefreshHook;
+        if (hook == null) {
+            writeJson(exchange, 501, Map.of("error", "collector_refresh_unavailable"));
+            return;
+        }
+        List<String> requestedCollectors = AUTH_TRANSITION_REFRESH_COLLECTORS;
+        try {
+            Map<String, Object> body = readBody(exchange);
+            List<String> incoming = coerceStringList(body.get("collectors"));
+            if (!incoming.isEmpty()) {
+                requestedCollectors = incoming;
+            }
+        } catch (RuntimeException ignored) {
+            // Keep default collector list when body is missing/invalid.
+        }
+        hook.accept(requestedCollectors);
+        writeJson(exchange, 200, Map.of(
+                "status", "ok",
+                "collectors", requestedCollectors
+        ));
+    }
+
     private void handleCollectorStatus(HttpExchange exchange) throws IOException {
         if (!ensureGet(exchange, true)) {
             return;
@@ -178,11 +343,224 @@ public class ApiServer {
         writeJson(exchange, 200, catalogDefaults);
     }
 
+    private void handleNewsSourceSettings(HttpExchange exchange) throws IOException {
+        if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writeJson(exchange, 200, Map.of(
+                    "availableSources", availableNewsSources(),
+                    "effectiveSelectedSources", new ArrayList<>(effectiveSelectedNewsSources(exchange))
+            ));
+            return;
+        }
+
+        if (!"PUT".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            return;
+        }
+
+        try {
+            Map<String, Object> body = readBody(exchange);
+            List<String> requested = coerceStringList(body.get("selectedSources"));
+            if (requested.isEmpty() && body.containsKey("newsSourceIds")) {
+                requested = coerceStringList(body.get("newsSourceIds"));
+            }
+            Set<String> availableIds = availableNewsSourceIds();
+            List<String> validated = requested.stream()
+                    .map(String::trim)
+                    .filter(id -> !id.isBlank())
+                    .filter(availableIds::contains)
+                    .distinct()
+                    .toList();
+
+            UserPreferences existing = authService.getPreferences(user.get().id());
+            UserPreferences updated = authService.updatePreferences(
+                    user.get().id(),
+                    new UserPreferences(existing.userId(), existing.zipCodes(), existing.watchlist(), validated)
+            );
+            writeJson(exchange, 200, Map.of(
+                    "availableSources", availableNewsSources(),
+                    "effectiveSelectedSources", updated.newsSourceIds().isEmpty()
+                            ? defaultSelectedNewsSources()
+                            : updated.newsSourceIds()
+            ));
+        } catch (IllegalArgumentException badInput) {
+            writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
+        }
+    }
+
     private void handleConfig(HttpExchange exchange) throws IOException {
         if (!ensureGet(exchange, true)) {
             return;
         }
         writeJson(exchange, 200, configView);
+    }
+
+    private void handleEnvironment(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        if (envService == null) {
+            writeJson(exchange, 501, Map.of("error", "environment_unavailable"));
+            return;
+        }
+        try {
+            Map<String, String> query = queryParams(exchange.getRequestURI());
+            List<String> zips = parseZipQuery(query.get("zips"));
+            writeJson(exchange, 200, envService.getStatuses(zips));
+        } catch (IllegalArgumentException badRequest) {
+            writeJson(exchange, 400, Map.of("error", badRequest.getMessage()));
+        } catch (RuntimeException upstreamFailure) {
+            writeJson(exchange, 502, Map.of("error", "environment_lookup_failed"));
+        }
+    }
+
+    private void handleSignup(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        try {
+            Map<String, Object> body = readBody(exchange);
+            String email = String.valueOf(body.getOrDefault("email", ""));
+            String password = String.valueOf(body.getOrDefault("password", ""));
+            AuthService.AuthResult result = authService.signup(email, password);
+            exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildAuthCookie(result.jwt(), secureCookies));
+            writeJson(exchange, 200, Map.of("id", result.userId(), "email", result.email()));
+        } catch (IllegalArgumentException badInput) {
+            writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
+        }
+    }
+
+    private void handleLogin(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        try {
+            Map<String, Object> body = readBody(exchange);
+            String email = String.valueOf(body.getOrDefault("email", ""));
+            String password = String.valueOf(body.getOrDefault("password", ""));
+            AuthService.AuthResult result = authService.login(email, password);
+            exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildAuthCookie(result.jwt(), secureCookies));
+            writeJson(exchange, 200, Map.of("id", result.userId(), "email", result.email()));
+            triggerAuthTransitionRefresh();
+        } catch (IllegalArgumentException badInput) {
+            writeJson(exchange, 401, Map.of("error", badInput.getMessage()));
+        }
+    }
+
+    private void handleLogout(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildClearCookie(secureCookies));
+        writeJson(exchange, 200, Map.of("status", "ok"));
+        triggerAuthTransitionRefresh();
+    }
+
+    private void handleMe(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            return;
+        }
+        writeJson(exchange, 200, Map.of("id", user.get().id(), "email", user.get().email()));
+    }
+
+    private void handlePreferences(HttpExchange exchange) throws IOException {
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            return;
+        }
+        if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writeJson(exchange, 200, authService.getPreferences(user.get().id()));
+            return;
+        }
+        if (!"PUT".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            UserPreferences incoming = JsonUtils.objectMapper().readValue(exchange.getRequestBody(), UserPreferences.class);
+            UserPreferences updated = authService.updatePreferences(user.get().id(), incoming);
+            writeJson(exchange, 200, updated);
+        } catch (IllegalArgumentException badInput) {
+            writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
+        }
+    }
+
+    private void handleForgotPassword(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Map<String, Object> body = readBody(exchange);
+        String email = String.valueOf(body.getOrDefault("email", ""));
+        authService.requestPasswordReset(email, exchange.getRemoteAddress().getAddress().getHostAddress());
+        writeJson(exchange, 200, Map.of("status", "ok"));
+    }
+
+    private void handleResetPassword(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        try {
+            Map<String, Object> body = readBody(exchange);
+            String token = String.valueOf(body.getOrDefault("token", ""));
+            String newPassword = String.valueOf(body.getOrDefault("newPassword", ""));
+            authService.resetPassword(token, newPassword);
+            writeJson(exchange, 200, Map.of("status", "ok"));
+        } catch (IllegalArgumentException badInput) {
+            writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
+        }
+    }
+
+    private void handleDevOutbox(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        if (!devOutboxEnabled || devOutboxEmailSender == null) {
+            writeJson(exchange, 404, Map.of("error", "dev_outbox_disabled"));
+            return;
+        }
+        writeJson(exchange, 200, devOutboxEmailSender.recent());
     }
 
     private boolean ensureGet(HttpExchange exchange, boolean corsEnabled) throws IOException {
@@ -197,6 +575,15 @@ public class ApiServer {
             return false;
         }
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return false;
+        }
+        return true;
+    }
+
+    private boolean ensurePost(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
             return false;
@@ -229,7 +616,146 @@ public class ApiServer {
         return query;
     }
 
+    private Map<String, Object> readBody(HttpExchange exchange) throws IOException {
+        return JsonUtils.objectMapper().readValue(exchange.getRequestBody(), Map.class);
+    }
+
+    private List<String> parseZipQuery(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            String value = part.trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            if (!value.matches("\\d{5}")) {
+                throw new IllegalArgumentException("zips must be comma-separated 5-digit ZIP codes");
+            }
+            values.add(value);
+        }
+        return values;
+    }
+
     private DiagnosticsTracker diagnostics() {
         return diagnosticsTracker != null ? diagnosticsTracker : EMPTY_DIAGNOSTICS;
+    }
+
+    private void triggerAuthTransitionRefresh() {
+        Consumer<List<String>> hook = collectorRefreshHook;
+        if (hook == null) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                hook.accept(AUTH_TRANSITION_REFRESH_COLLECTORS);
+            } catch (RuntimeException ex) {
+                LOGGER.warning("Auth transition collector refresh failed: " + ex.getMessage());
+            }
+        });
+    }
+
+    private Set<String> effectiveSelectedNewsSources(HttpExchange exchange) {
+        List<String> defaults = defaultSelectedNewsSources();
+        if (authService == null) {
+            return new LinkedHashSet<>(defaults);
+        }
+        Optional<AuthUser> user = AuthMiddleware.readAuthCookie(exchange).flatMap(authService::userForToken);
+        if (user.isEmpty()) {
+            return new LinkedHashSet<>(defaults);
+        }
+        UserPreferences preferences = authService.getPreferences(user.get().id());
+        List<String> selected = preferences.newsSourceIds().isEmpty() ? defaults : preferences.newsSourceIds();
+        Set<String> available = availableNewsSourceIds();
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String id : selected) {
+            if (available.contains(id)) {
+                normalized.add(id);
+            }
+        }
+        if (normalized.isEmpty()) {
+            normalized.addAll(defaults);
+        }
+        return normalized;
+    }
+
+    private Set<String> effectiveZipCodes(HttpExchange exchange) {
+        List<String> defaults = defaultZipCodes();
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (authService == null) {
+            normalized.addAll(defaults);
+            return normalized;
+        }
+        Optional<AuthUser> user = AuthMiddleware.readAuthCookie(exchange).flatMap(authService::userForToken);
+        if (user.isEmpty()) {
+            normalized.addAll(defaults);
+            return normalized;
+        }
+        UserPreferences preferences = authService.getPreferences(user.get().id());
+        List<String> requested = preferences.zipCodes().isEmpty() ? defaults : preferences.zipCodes();
+        for (String zip : requested) {
+            if (zip != null && zip.matches("\\d{5}")) {
+                normalized.add(zip);
+            }
+        }
+        if (normalized.isEmpty()) {
+            normalized.addAll(defaults);
+        }
+        return normalized;
+    }
+
+    private List<Map<String, Object>> availableNewsSources() {
+        Object raw = catalogDefaults.get("defaultNewsSources");
+        if (raw instanceof List<?> list) {
+            return list.stream()
+                    .filter(Map.class::isInstance)
+                    .map(item -> (Map<String, Object>) item)
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private List<String> defaultSelectedNewsSources() {
+        Object raw = catalogDefaults.get("defaultSelectedNewsSources");
+        if (raw instanceof List<?> list) {
+            return list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+        }
+        return NewsSourceCatalog.defaultSelectedSourceIds();
+    }
+
+    private Set<String> availableNewsSourceIds() {
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        for (Map<String, Object> source : availableNewsSources()) {
+            Object id = source.get("id");
+            if (id instanceof String value && !value.isBlank()) {
+                ids.add(value);
+            }
+        }
+        return ids;
+    }
+
+    private List<String> coerceStringList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+    }
+
+    private List<String> defaultZipCodes() {
+        Object raw = catalogDefaults.get("defaultZipCodes");
+        if (raw instanceof List<?> list) {
+            List<String> zips = new ArrayList<>();
+            for (Object item : list) {
+                String zip = String.valueOf(item);
+                if (zip.matches("\\d{5}")) {
+                    zips.add(zip);
+                }
+            }
+            if (!zips.isEmpty()) {
+                return zips;
+            }
+        }
+        return List.of();
     }
 }

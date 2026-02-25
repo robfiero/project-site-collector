@@ -55,7 +55,8 @@ public final class EventCodec {
 
     public static String toJsonLine(Event event) {
         try {
-            return MAPPER.writeValueAsString(new StoredEvent(event.type(), event.timestamp(), event));
+            long nowMillis = Instant.now().toEpochMilli();
+            return MAPPER.writeValueAsString(new StoredEvent(event.type(), nowMillis, nowMillis, event));
         } catch (IOException e) {
             throw new IllegalStateException("Unable to serialize event", e);
         }
@@ -77,7 +78,8 @@ public final class EventCodec {
 
     public static String toSseData(Event event) {
         try {
-            return MAPPER.writeValueAsString(new StoredEvent(event.type(), event.timestamp(), event));
+            long nowMillis = Instant.now().toEpochMilli();
+            return MAPPER.writeValueAsString(new StoredEvent(event.type(), nowMillis, nowMillis, event));
         } catch (IOException e) {
             throw new IllegalStateException("Unable to serialize SSE event", e);
         }
@@ -101,6 +103,6 @@ public final class EventCodec {
         bus.subscribe(PasswordResetFailed.class, consumer::accept);
     }
 
-    private record StoredEvent(String type, Instant timestamp, Event event) {
+    private record StoredEvent(String type, long timestampEpochMillis, long timestamp, Event event) {
     }
 }

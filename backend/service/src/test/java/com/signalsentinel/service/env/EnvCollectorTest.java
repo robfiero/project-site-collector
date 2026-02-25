@@ -39,7 +39,7 @@ class EnvCollectorTest {
         EnvService envService = new EnvService(
                 new ZipGeoStore(tempDir.resolve("zip-geo.json")),
                 zip -> new ZipGeoRecord(zip, 42.35, -71.06, Instant.now(clock), "test"),
-                (lat, lon) -> new NoaaWeatherSnapshot(72.5, "Clear", "5 mph", Instant.now(clock), "https://api.weather.gov/mock", "2026-02-18T12:00:00Z"),
+                (lat, lon) -> new NoaaWeatherSnapshot(72.5, "Clear", "5 mph", Instant.now(clock), "https://api.weather.gov/mock", "2026-02-18T12:00:00Z", "Boston", "MA"),
                 zip -> Optional.of(new AirNowAqiSnapshot(42, "Good", Instant.now(clock), "https://www.airnowapi.org/mock", "2026-02-18 12:00")),
                 clock,
                 List.of("02108")
@@ -66,7 +66,9 @@ class EnvCollectorTest {
     void continuesWhenOneZipFails() {
         EventBus eventBus = new EventBus();
         List<AlertRaised> alerts = new ArrayList<>();
+        List<EnvWeatherUpdated> weatherEvents = new ArrayList<>();
         eventBus.subscribe(AlertRaised.class, alerts::add);
+        eventBus.subscribe(EnvWeatherUpdated.class, weatherEvents::add);
 
         Clock clock = Clock.fixed(Instant.parse("2026-02-18T12:00:00Z"), ZoneOffset.UTC);
         EnvService envService = new EnvService(
@@ -77,7 +79,7 @@ class EnvCollectorTest {
                     }
                     return new ZipGeoRecord(zip, 47.61, -122.33, Instant.now(clock), "test");
                 },
-                (lat, lon) -> new NoaaWeatherSnapshot(58.0, "Cloudy", "8 mph", Instant.now(clock), "https://api.weather.gov/mock", "2026-02-18T12:00:00Z"),
+                (lat, lon) -> new NoaaWeatherSnapshot(58.0, "Cloudy", "8 mph", Instant.now(clock), "https://api.weather.gov/mock", "2026-02-18T12:00:00Z", "Seattle", "WA"),
                 zip -> Optional.empty(),
                 clock,
                 List.of("98101")
@@ -94,7 +96,12 @@ class EnvCollectorTest {
 
         CollectorResult result = collector.poll(ctx).join();
 
-        assertFalse(result.success());
-        assertTrue(alerts.stream().anyMatch(alert -> alert.message().contains("99999")));
+        assertTrue(result.success());
+        assertTrue(alerts.isEmpty());
+        assertTrue(weatherEvents.stream().anyMatch(event ->
+                event.zip().equals("99999")
+                        && event.status().equals("UNAVAILABLE")
+                        && event.error() != null
+                        && event.error().contains("ZIP")));
     }
 }

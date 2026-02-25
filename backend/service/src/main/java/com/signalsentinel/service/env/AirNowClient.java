@@ -27,6 +27,10 @@ public final class AirNowClient {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
     }
 
+    public boolean isConfigured() {
+        return !apiKey.isBlank();
+    }
+
     public Optional<AirNowAqiSnapshot> currentForZip(String zip) {
         if (apiKey.isBlank()) {
             return Optional.empty();
@@ -41,6 +45,7 @@ public final class AirNowClient {
                 + "&distance=25"
                 + "&API_KEY=" + URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
         URI uri = URI.create("https://www.airnowapi.org/aq/observation/zipCode/current/?" + query);
+        String redactedRequestUrl = sanitizeApiKey(uri.toString());
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .GET()
                 .timeout(timeout)
@@ -84,7 +89,7 @@ public final class AirNowClient {
                     bestAqi,
                     bestCategory,
                     Instant.now(clock),
-                    uri.toString(),
+                    redactedRequestUrl,
                     bestValidDateTime
             ));
         } catch (RuntimeException e) {
@@ -92,5 +97,12 @@ public final class AirNowClient {
         } catch (Exception e) {
             throw new IllegalStateException("AirNow request failed", e);
         }
+    }
+
+    private static String sanitizeApiKey(String url) {
+        if (url == null || url.isBlank()) {
+            return url;
+        }
+        return url.replaceAll("(?i)(API_KEY=)[^&]+", "$1***");
     }
 }

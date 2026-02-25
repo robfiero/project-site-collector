@@ -13,12 +13,29 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class HttpClientFactoryTest {
     @Test
     void createsDefaultClientWhenTruststorePathNotProvided() {
         HttpClient client = HttpClientFactory.create(Duration.ofMillis(200), Map.of());
         assertNotNull(client);
+        assertEquals(HttpClient.Redirect.NORMAL, client.followRedirects());
+        assertEquals(Duration.ofMillis(200), client.connectTimeout().orElseThrow());
+    }
+
+    @Test
+    void failsWhenTruststorePasswordMissing() throws Exception {
+        Path truststore = Files.createTempFile("truststore-", ".jks");
+        writeEmptyTruststore(truststore, "JKS", "changeit".toCharArray());
+
+        IllegalStateException ex = assertThrows(
+                IllegalStateException.class,
+                () -> HttpClientFactory.create(Duration.ofMillis(200), Map.of(
+                        "TRUSTSTORE_PATH", truststore.toString()
+                ))
+        );
+        assertTrue(ex.getMessage().contains("TRUSTSTORE_PASSWORD must be set"));
     }
 
     @Test
@@ -52,6 +69,19 @@ class HttpClientFactoryTest {
     void createsClientWithPkcs12Truststore() throws Exception {
         Path truststore = Files.createTempFile("truststore-", ".p12");
         writeEmptyTruststore(truststore, "PKCS12", "changeit".toCharArray());
+
+        HttpClient client = HttpClientFactory.create(Duration.ofMillis(200), Map.of(
+                "TRUSTSTORE_PATH", truststore.toString(),
+                "TRUSTSTORE_PASSWORD", "changeit"
+        ));
+
+        assertNotNull(client);
+    }
+
+    @Test
+    void createsClientWithJksTruststoreWhenExtensionIsUnknown() throws Exception {
+        Path truststore = Files.createTempFile("truststore-", ".bin");
+        writeEmptyTruststore(truststore, "JKS", "changeit".toCharArray());
 
         HttpClient client = HttpClientFactory.create(Duration.ofMillis(200), Map.of(
                 "TRUSTSTORE_PATH", truststore.toString(),

@@ -1,6 +1,7 @@
 package com.signalsentinel.service.support;
 
 import com.signalsentinel.collectors.api.SignalStore;
+import com.signalsentinel.core.model.LocalHappeningsSignal;
 import com.signalsentinel.core.model.NewsSignal;
 import com.signalsentinel.core.model.SiteSignal;
 import com.signalsentinel.core.model.WeatherSignal;
@@ -27,5 +28,9 @@ public class TestSignalStore implements SignalStore {
 
     @Override
     public void putWeather(WeatherSignal signal) {
+    }
+
+    @Override
+    public void putLocalHappenings(LocalHappeningsSignal signal) {
     }
 }

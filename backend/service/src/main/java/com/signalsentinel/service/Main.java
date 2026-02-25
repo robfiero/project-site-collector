@@ -4,6 +4,8 @@ import com.signalsentinel.collectors.api.Collector;
 import com.signalsentinel.collectors.api.CollectorContext;
 import com.signalsentinel.collectors.config.RssCollectorConfig;
 import com.signalsentinel.collectors.config.SiteCollectorConfig;
+import com.signalsentinel.collectors.config.TicketmasterCollectorConfig;
+import com.signalsentinel.collectors.events.TicketmasterEventsCollector;
 import com.signalsentinel.collectors.rss.RssNewsCollector;
 import com.signalsentinel.collectors.site.SiteCollector;
 import com.signalsentinel.core.bus.EventBus;
@@ -76,14 +78,21 @@ public final class Main {
         for (CollectorConfig cfg : collectorConfigs) {
             collectorConfigByName.put(cfg.name(), cfg);
         }
+        if (!collectorConfigByName.containsKey("envCollector")) {
+            LOGGER.warning("envCollector is not configured. Runtime collector config source is backend/config/collectors.json.");
+        }
 
         SiteCollector siteCollector = new SiteCollector(intervalFor(collectorConfigByName, "siteCollector", siteConfig.interval()));
         RssNewsCollector rssCollector = new RssNewsCollector(intervalFor(collectorConfigByName, "rssCollector", rssConfig.interval()));
-
-        Map<String, Object> collectorContextConfig = Map.of(
-                SiteCollector.CONFIG_KEY, siteConfig,
-                RssNewsCollector.CONFIG_KEY, rssConfig
+        TicketmasterEventsCollector ticketmasterEventsCollector = new TicketmasterEventsCollector(
+                intervalFor(collectorConfigByName, "localEventsCollector", Duration.ofSeconds(300))
         );
+
+        TicketmasterCollectorConfig ticketmasterConfig = buildTicketmasterConfig(System.getenv(), LOGGER::warning);
+
+        Map<String, Object> collectorContextConfig = new HashMap<>();
+        collectorContextConfig.put(SiteCollector.CONFIG_KEY, siteConfig);
+        collectorContextConfig.put(RssNewsCollector.CONFIG_KEY, rssConfig);
 
         HttpClient sharedHttpClient = HttpClientFactory.create(Duration.ofSeconds(5));
 
@@ -97,16 +106,18 @@ public final class Main {
         );
 
         List<SchedulerService.ScheduledCollector> scheduledCollectors = new ArrayList<>();
-        scheduledCollectors.add(new SchedulerService.ScheduledCollector(
-                siteCollector,
-                siteCollector.interval(),
-                isEnabled(collectorConfigByName, "siteCollector", true)
-        ));
-        scheduledCollectors.add(new SchedulerService.ScheduledCollector(
-                rssCollector,
-                rssCollector.interval(),
-                isEnabled(collectorConfigByName, "rssCollector", true)
-        ));
+        registerScheduledCollector(scheduledCollectors, collectorConfigByName, "siteCollector", siteCollector, context, true);
+        registerScheduledCollector(scheduledCollectors, collectorConfigByName, "rssCollector", rssCollector, context, true);
+        if (ticketmasterConfig != null) {
+            registerScheduledCollector(
+                    scheduledCollectors,
+                    collectorConfigByName,
+                    "localEventsCollector",
+                    ticketmasterEventsCollector,
+                    context,
+                    true
+            );
+        }
 
         SchedulerService scheduler = new SchedulerService(scheduledCollectors, context);
         SseBroadcaster broadcaster = new SseBroadcaster(eventBus);
@@ -155,8 +166,20 @@ public final class Main {
                 "sites", siteConfig,
                 "rss", rssConfig
         );
-        Map<String, Object> catalogDefaults = CatalogDefaults.fromRssConfig(rssConfig);
+        Map<String, Object> catalogDefaults = CatalogDefaults.defaults();
         List<String> defaultZips = castToStringList(catalogDefaults.get("defaultZipCodes"));
+        java.util.function.Supplier<List<String>> effectiveZipSupplier =
+                () -> authEnabled ? mergedZips(defaultZips, preferencesStore.all()) : defaultZips;
+        if (ticketmasterConfig != null) {
+            ticketmasterConfig = new TicketmasterCollectorConfig(
+                    ticketmasterConfig.apiKey(),
+                    ticketmasterConfig.baseUrl(),
+                    effectiveZipSupplier,
+                    ticketmasterConfig.radiusMiles(),
+                    ticketmasterConfig.classifications()
+            );
+            collectorContextConfig.put(TicketmasterEventsCollector.CONFIG_KEY, ticketmasterConfig);
+        }
         EnvService envService = new EnvService(
                 new ZipGeoStore(dataDir.resolve("zip-geo.json")),
                 new TigerwebZipResolver(sharedHttpClient, Duration.ofSeconds(6), Clock.systemUTC()),
@@ -177,16 +200,14 @@ public final class Main {
         );
         EnvCollector envCollector = new EnvCollector(
                 envService,
-                () -> authEnabled ? mergedZips(defaultZips, preferencesStore.all()) : defaultZips,
+                effectiveZipSupplier,
                 intervalFor(collectorConfigByName, "envCollector", Duration.ofSeconds(300))
         );
-        scheduledCollectors.add(new SchedulerService.ScheduledCollector(
-                envCollector,
-                envCollector.interval(),
-                isEnabled(collectorConfigByName, "envCollector", true)
-        ));
+        registerScheduledCollector(scheduledCollectors, collectorConfigByName, "envCollector", envCollector, context, true);
 
-        List<Collector> collectors = List.of(siteCollector, rssCollector, envCollector);
+        List<Collector> collectors = ticketmasterConfig == null
+                ? List.of(siteCollector, rssCollector, envCollector)
+                : List.of(siteCollector, rssCollector, envCollector, ticketmasterEventsCollector);
         ApiServer apiServer = new ApiServer(
                 8080,
                 signalStore,
@@ -202,6 +223,7 @@ public final class Main {
                 devOutboxEnabled,
                 devOutbox
         );
+        apiServer.setCollectorRefreshHook(collectorsToRun -> scheduler.runOnceCollectors(collectorsToRun));
 
         scheduler.start();
         apiServer.start();
@@ -270,6 +292,23 @@ public final class Main {
     record RuntimeFlags(boolean devMode, boolean authEnabled, boolean allowInsecureAuthHasher) {
     }
 
+    static TicketmasterCollectorConfig buildTicketmasterConfig(Map<String, String> env, Consumer<String> warn) {
+        String apiKey = env.getOrDefault("TICKETMASTER_API_KEY", "").trim();
+        if (apiKey.isBlank()) {
+            warn.accept("TICKETMASTER_API_KEY is missing; localEventsCollector is disabled.");
+            return null;
+        }
+
+        String baseUrl = env.getOrDefault("TICKETMASTER_BASE_URL", "https://app.ticketmaster.com/discovery/v2").trim();
+        if (baseUrl.isBlank()) {
+            baseUrl = "https://app.ticketmaster.com/discovery/v2";
+        }
+        int radius = parseIntOrDefault(env.get("TICKETMASTER_RADIUS_MILES"), 25);
+        List<String> classifications = parseCsv(env.getOrDefault("TICKETMASTER_CLASSIFICATIONS", ""));
+
+        return new TicketmasterCollectorConfig(apiKey, baseUrl, List::of, radius, classifications);
+    }
+
     private static Duration intervalFor(Map<String, CollectorConfig> map, String name, Duration fallback) {
         CollectorConfig config = map.get(name);
         if (config == null) {
@@ -281,6 +320,23 @@ public final class Main {
     private static boolean isEnabled(Map<String, CollectorConfig> map, String name, boolean fallback) {
         CollectorConfig config = map.get(name);
         return config == null ? fallback : config.enabled();
+    }
+
+    private static void registerScheduledCollector(
+            List<SchedulerService.ScheduledCollector> scheduledCollectors,
+            Map<String, CollectorConfig> configByName,
+            String collectorName,
+            Collector collector,
+            CollectorContext context,
+            boolean fallbackEnabled
+    ) {
+        CollectorConfig config = configByName.get(collectorName);
+        boolean enabled = config == null ? fallbackEnabled : config.enabled();
+        Duration interval = collector.interval();
+        if (!enabled) {
+            return;
+        }
+        scheduledCollectors.add(new SchedulerService.ScheduledCollector(collector, interval, true));
     }
 
     @SuppressWarnings("unchecked")
@@ -312,5 +368,30 @@ public final class Main {
             }
         }
         return List.copyOf(merged);
+    }
+
+    private static int parseIntOrDefault(String raw, int fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static List<String> parseCsv(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (String token : raw.split(",")) {
+            String trimmed = token.trim();
+            if (!trimmed.isBlank()) {
+                values.add(trimmed);
+            }
+        }
+        return List.copyOf(values);
     }
 }

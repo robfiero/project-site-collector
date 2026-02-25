@@ -154,7 +154,8 @@ export interface SignalsSnapshot {
 
 export interface EventEnvelope {
   type: string;
-  timestamp: number;
+  timestampEpochMillis: number;
+  timestamp?: number;
   event: Record<string, unknown>;
 }
 
@@ -167,8 +168,21 @@ export interface AirQualitySignal {
 
 export interface LocalHappeningsSignal {
   location: string;
-  headlines: string[];
+  items: HappeningItem[];
+  sourceAttribution?: string;
   updatedAt: string;
+}
+
+export interface HappeningItem {
+  id: string;
+  name: string;
+  startDateTime: string;
+  venueName: string;
+  city: string;
+  state: string;
+  url: string;
+  category: string;
+  source: 'ticketmaster' | string;
 }
 
 export interface MarketQuoteSignal {
@@ -194,7 +208,16 @@ export interface MetricsResponse {
 
 export interface CatalogDefaults {
   defaultZipCodes: string[];
-  defaultNewsSources: Array<{ id: string; name: string; url: string; category: string }>;
+  defaultNewsSources: Array<{
+    id: string;
+    name: string;
+    type: 'rss' | 'json' | string;
+    url: string;
+    enabledByDefault?: boolean;
+    requiresConfig?: boolean;
+    note?: string;
+  }>;
+  defaultSelectedNewsSources?: string[];
   defaultWatchlist: string[];
 }
 
@@ -214,6 +237,7 @@ export interface EnvAqi {
 
 export interface EnvStatus {
   zip: string;
+  locationLabel?: string;
   lat: number;
   lon: number;
   weather: EnvWeather;

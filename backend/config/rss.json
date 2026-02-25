@@ -3,9 +3,17 @@
   "topStories": 5,
   "keywords": ["storm", "breaking"],
   "sources": [
-    {
-      "source": "mozilla-blog",
-      "url": "https://blog.mozilla.org/feed/"
-    }
+    { "source": "nyt", "url": "https://api.nytimes.com/svc/topstories/v2/home.json" },
+    { "source": "nyt_most_popular", "url": "https://api.nytimes.com/svc/mostpopular/v2/viewed/1.json" },
+    { "source": "npr_news_now", "url": "https://feeds.npr.org/500005/podcast.xml" },
+    { "source": "npr_politics", "url": "https://feeds.npr.org/1014/rss.xml" },
+    { "source": "npr_morning_edition", "url": "https://www.kuow.org/feeds/podcasts/morning-edition/podcasts/rss.xml" },
+    { "source": "nbc", "url": "https://feeds.nbcnews.com/nbcnews/public/news" },
+    { "source": "cbs", "url": "https://www.cbsnews.com/latest/rss/main" },
+    { "source": "cnn", "url": "http://rss.cnn.com/rss/cnn_topstories.rss" },
+    { "source": "fox", "url": "https://moxie.foxnews.com/google-publisher/latest.xml" },
+    { "source": "wsj", "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml" },
+    { "source": "abc", "url": "https://feeds.abcnews.com/abcnews/topstories" },
+    { "source": "verge", "url": "https://www.theverge.com/rss/index.xml" }
   ]
 }

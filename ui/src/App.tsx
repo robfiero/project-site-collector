@@ -10,6 +10,7 @@ import {
   fetchHealth,
   fetchMe,
   fetchMetrics,
+  fetchNewsSourceSettings,
   fetchMyPreferences,
   fetchSignals,
   forgotPassword,
@@ -18,12 +19,20 @@ import {
   resetPassword,
   saveMyPreferences,
   signup,
+  triggerCollectorRefresh,
   type AuthUserView,
   type DevOutboxEmail
 } from './api';
 import { demoLocalHappenings, demoQuote } from './demoData';
 import { filterEvents, normalizeEventEnvelope } from './eventFeed';
+import { formatMarketSymbolLabel } from './markets';
 import { formatPlaceLabel } from './places';
+import cnnLogo from './assets/news-logos/cnn.svg';
+import foxLogo from './assets/news-logos/fox.svg';
+import nprLogo from './assets/news-logos/npr.svg';
+import nytLogo from './assets/news-logos/nyt.svg';
+import vergeLogo from './assets/news-logos/verge.svg';
+import wsjLogo from './assets/news-logos/wsj.svg';
 import AdminDashboard from './admin/AdminDashboard';
 import type {
   CatalogDefaults,
@@ -41,6 +50,8 @@ const MAX_EVENTS = 200;
 const MAX_WATCHLIST = 25;
 const FALLBACK_DEFAULT_ZIPS = ['02108', '98101'];
 const FALLBACK_DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
+const FALLBACK_DEFAULT_NEWS_SOURCES = ['cnn', 'wsj', 'verge'];
+const AUTH_TRANSITION_COLLECTORS = ['envCollector', 'rssCollector', 'localEventsCollector'];
 const INTENDED_ROUTE_KEY = 'todays-overview:intended-route';
 const KNOWN_SSE_TYPES = [
   'CollectorTickStarted',
@@ -58,6 +69,17 @@ const KNOWN_SSE_TYPES = [
   'PasswordResetSucceeded',
   'PasswordResetFailed'
 ] as const;
+const NEWS_LOGO_BY_SOURCE_ID: Record<string, { src: string; alt: string }> = {
+  nyt: { src: nytLogo, alt: 'The New York Times logo' },
+  nyt_most_popular: { src: nytLogo, alt: 'The New York Times logo' },
+  cnn: { src: cnnLogo, alt: 'CNN logo' },
+  fox: { src: foxLogo, alt: 'Fox News logo' },
+  wsj: { src: wsjLogo, alt: 'Wall Street Journal logo' },
+  verge: { src: vergeLogo, alt: 'The Verge logo' },
+  npr_news_now: { src: nprLogo, alt: 'NPR logo' },
+  npr_politics: { src: nprLogo, alt: 'NPR logo' },
+  npr_morning_edition: { src: nprLogo, alt: 'NPR logo' }
+};
 
 type RouteName = 'home' | 'settings' | 'admin' | 'login' | 'signup' | 'forgot' | 'reset';
 type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
@@ -86,6 +108,7 @@ export default function App() {
   const [envByZip, setEnvByZip] = useState<Record<string, EnvStatus>>({});
   const [zipCodes, setZipCodes] = useState<string[]>(loadZipCodes());
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist());
+  const [selectedNewsSourceIds, setSelectedNewsSourceIds] = useState<string[]>(FALLBACK_DEFAULT_NEWS_SOURCES);
   const [authUser, setAuthUser] = useState<AuthUserView | null>(null);
   const [authResolved, setAuthResolved] = useState<boolean>(false);
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
@@ -97,9 +120,11 @@ export default function App() {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const newsRefreshTimerRef = useRef<number | null>(null);
   const retryDelayRef = useRef<number>(1000);
   const pausedRef = useRef<boolean>(false);
   const settingsSavedTimerRef = useRef<number | null>(null);
+  const previousRouteRef = useRef<RouteName>(route);
 
   useEffect(() => {
     const onHashChange = () => setRoute(readRouteFromHash());
@@ -125,7 +150,7 @@ export default function App() {
     let mounted = true;
     async function bootstrap(): Promise<void> {
       try {
-        const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse, meResponse, outboxResponse] = await Promise.all([
+        const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse, meResponse, outboxResponse, newsSourceSettings] = await Promise.all([
           fetchHealth(),
           fetchSignals(),
           fetchEvents(100),
@@ -134,7 +159,8 @@ export default function App() {
           fetchCatalogDefaults(),
           fetchConfigView(),
           fetchMe(),
-          fetchDevOutbox()
+          fetchDevOutbox(),
+          fetchNewsSourceSettings()
         ]);
         if (!mounted) {
           return;
@@ -145,16 +171,34 @@ export default function App() {
         setMetrics(metricsResponse);
         setMetricsUpdatedAt(Date.now());
         setCollectorStatus(statusResponse);
-        setCatalogDefaults(defaultsResponse);
+        setCatalogDefaults({
+          ...defaultsResponse,
+          defaultNewsSources: defaultsResponse.defaultNewsSources.length > 0
+            ? defaultsResponse.defaultNewsSources
+            : newsSourceSettings.availableSources,
+          defaultSelectedNewsSources: defaultsResponse.defaultSelectedNewsSources && defaultsResponse.defaultSelectedNewsSources.length > 0
+            ? defaultsResponse.defaultSelectedNewsSources
+            : newsSourceSettings.effectiveSelectedSources
+        });
         setConfigView(configResponse);
         setAuthUser(meResponse);
         setSessionExpired(false);
         setDevOutbox(outboxResponse);
+        setSelectedNewsSourceIds(newsSourceSettings.effectiveSelectedSources.length > 0
+          ? newsSourceSettings.effectiveSelectedSources
+          : (defaultsResponse.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES));
         if (meResponse) {
           try {
             const prefs = await fetchMyPreferences();
             setZipCodes(prefs.zipCodes);
             setWatchlist(prefs.watchlist);
+            setSelectedNewsSourceIds(
+              prefs.newsSourceIds.length > 0
+                ? prefs.newsSourceIds
+                : (newsSourceSettings.effectiveSelectedSources.length > 0
+                  ? newsSourceSettings.effectiveSelectedSources
+                  : (defaultsResponse.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES))
+            );
           } catch (prefError) {
             if (isUnauthorizedError(prefError)) {
               handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
@@ -228,10 +272,21 @@ export default function App() {
           if (pausedRef.current) {
             setPausedEventBuffer((previous) => [...previous, normalized].slice(-MAX_EVENTS));
           } else {
-            setEvents((previous) => [...previous, normalized].slice(-MAX_EVENTS));
+          setEvents((previous) => [...previous, normalized].slice(-MAX_EVENTS));
           }
           setSnapshot((previous) => applyOptimisticUpdate(previous, normalized));
           setEnvByZip((previous) => applyEnvironmentUpdate(previous, normalized));
+          if (normalized.type === 'NewsUpdated' && newsRefreshTimerRef.current === null) {
+            newsRefreshTimerRef.current = window.setTimeout(async () => {
+              newsRefreshTimerRef.current = null;
+              try {
+                const refreshedSignals = await fetchSignals();
+                setSnapshot(refreshedSignals);
+              } catch {
+                // keep existing snapshot if refresh fails
+              }
+            }, 350);
+          }
         } catch {
           // ignore malformed payload and keep stream alive
         }
@@ -259,6 +314,9 @@ export default function App() {
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
       }
+      if (newsRefreshTimerRef.current !== null) {
+        window.clearTimeout(newsRefreshTimerRef.current);
+      }
       eventSourceRef.current?.close();
     };
   }, []);
@@ -273,17 +331,39 @@ export default function App() {
 
   const filteredEvents = useMemo(() => filterEvents(events, eventTypeFilter, searchQuery), [events, eventTypeFilter, searchQuery]);
   const siteEntries = useMemo(() => Object.values(snapshot.sites).sort((a, b) => a.siteId.localeCompare(b.siteId)), [snapshot.sites]);
-  const newsEntries = useMemo(() => Object.values(snapshot.news).sort((a, b) => a.source.localeCompare(b.source)), [snapshot.news]);
+  const newsEntries = useMemo(() => {
+    const selected = new Set(selectedNewsSourceIds);
+    return Object.values(snapshot.news)
+      .filter((source) => selected.size === 0 || selected.has(source.source))
+      .sort((a, b) => a.source.localeCompare(b.source));
+  }, [snapshot.news, selectedNewsSourceIds]);
+  const newsSourceLabels = useMemo(() => {
+    return new Map(
+      catalogDefaults.defaultNewsSources.map((source) => [source.id, source.name])
+    );
+  }, [catalogDefaults.defaultNewsSources]);
   const marketEntries = useMemo(() => watchlist.map((symbol) => snapshot.markets?.[symbol] ?? demoQuote(symbol)), [watchlist, snapshot.markets]);
   const effectiveZipCodes = useMemo(
-    () => (zipCodes.length > 0
-      ? zipCodes
-      : (catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes : FALLBACK_DEFAULT_ZIPS)),
+    () => normalizeZipCodes(
+      zipCodes.length > 0
+        ? zipCodes
+        : (catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes : FALLBACK_DEFAULT_ZIPS)
+    ),
     [zipCodes, catalogDefaults.defaultZipCodes]
   );
   const happeningsEntries = useMemo(
-    () => effectiveZipCodes.map((zip) => snapshot.localHappenings?.[zip] ?? demoLocalHappenings(zip)),
+    () => {
+      const backendEntries = Object.values(snapshot.localHappenings ?? {});
+      if (backendEntries.length > 0) {
+        return backendEntries;
+      }
+      return effectiveZipCodes.map((zip) => demoLocalHappenings(zip));
+    },
     [effectiveZipCodes, snapshot.localHappenings]
+  );
+  const happeningsAttribution = useMemo(
+    () => happeningsEntries.find((entry) => entry.sourceAttribution)?.sourceAttribution ?? 'Powered by Ticketmaster',
+    [happeningsEntries]
   );
   const showHeaderStatus = health !== 'ok' || connectionState !== 'open';
 
@@ -295,7 +375,13 @@ export default function App() {
         if (cancelled) {
           return;
         }
-        setEnvByZip(Object.fromEntries(statuses.map((status) => [status.zip, status])) as Record<string, EnvStatus>);
+        setEnvByZip(
+          Object.fromEntries(
+            statuses
+              .map((status) => ({ ...status, zip: normalizeZip(status.zip) ?? status.zip }))
+              .map((status) => [status.zip, status])
+          ) as Record<string, EnvStatus>
+        );
       } catch {
         if (!cancelled) {
           setEnvByZip({});
@@ -353,8 +439,12 @@ export default function App() {
   const resetSettingsToDefaults = () => {
     const nextZips = catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes.slice(0, 10) : FALLBACK_DEFAULT_ZIPS;
     const nextWatchlist = catalogDefaults.defaultWatchlist.length > 0 ? catalogDefaults.defaultWatchlist : FALLBACK_DEFAULT_WATCHLIST;
+    const nextNewsSources = catalogDefaults.defaultSelectedNewsSources && catalogDefaults.defaultSelectedNewsSources.length > 0
+      ? catalogDefaults.defaultSelectedNewsSources
+      : FALLBACK_DEFAULT_NEWS_SOURCES;
     setZipCodes(nextZips);
     setWatchlist(nextWatchlist);
+    setSelectedNewsSourceIds(nextNewsSources);
     setZipInput('');
     setSymbolInput('');
   };
@@ -371,16 +461,23 @@ export default function App() {
     setSymbolInput('');
   };
 
+  const restoreNewsSourceDefaults = () => {
+    const nextNewsSources = catalogDefaults.defaultSelectedNewsSources && catalogDefaults.defaultSelectedNewsSources.length > 0
+      ? catalogDefaults.defaultSelectedNewsSources
+      : FALLBACK_DEFAULT_NEWS_SOURCES;
+    setSelectedNewsSourceIds(nextNewsSources);
+  };
+
   useEffect(() => {
     if (!authUser) {
       return;
     }
-    setSettingsSaveState('saving');
-    saveMyPreferences({
-      zipCodes,
-      watchlist,
-      newsSourceIds: []
-    }).then(() => {
+      setSettingsSaveState('saving');
+      saveMyPreferences({
+        zipCodes,
+        watchlist,
+        newsSourceIds: selectedNewsSourceIds
+      }).then(() => {
       setSettingsSaveState('saved');
       if (settingsSavedTimerRef.current !== null) {
         window.clearTimeout(settingsSavedTimerRef.current);
@@ -394,7 +491,7 @@ export default function App() {
       }
       setSettingsSaveState('idle');
     });
-  }, [authUser, zipCodes, watchlist]);
+  }, [authUser, zipCodes, watchlist, selectedNewsSourceIds]);
 
   useEffect(() => {
     return () => {
@@ -404,13 +501,53 @@ export default function App() {
     };
   }, []);
 
+  const refreshAfterAuthTransition = async (targetZips: string[]) => {
+    try {
+      await triggerCollectorRefresh(AUTH_TRANSITION_COLLECTORS);
+    } catch {
+      // Continue with snapshot refresh even when manual collector refresh is unavailable.
+    }
+
+    try {
+      const nextSnapshot = await fetchSignals();
+      setSnapshot(nextSnapshot);
+    } catch {
+      // Keep existing snapshot if fetch fails.
+    }
+
+    try {
+      const statuses = await fetchEnvironment(normalizeZipCodes(targetZips));
+      setEnvByZip(
+        Object.fromEntries(
+          statuses
+            .map((status) => ({ ...status, zip: normalizeZip(status.zip) ?? status.zip }))
+            .map((status) => [status.zip, status])
+        ) as Record<string, EnvStatus>
+      );
+    } catch {
+      // Keep existing env status if refresh fails.
+    }
+  };
+
+  useEffect(() => {
+    const previousRoute = previousRouteRef.current;
+    previousRouteRef.current = route;
+    if (previousRoute === 'settings' && route === 'home') {
+      void refreshAfterAuthTransition(effectiveZipCodes);
+    }
+  }, [route, effectiveZipCodes]);
+
   const doSignOut = async () => {
     try {
       await logout();
+      const nextZips = loadZipCodes();
       setAuthUser(null);
       setSessionExpired(false);
-      setZipCodes(loadZipCodes());
+      setAuthMessage(null);
+      setZipCodes(nextZips);
       setWatchlist(loadWatchlist());
+      setSelectedNewsSourceIds(catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES);
+      await refreshAfterAuthTransition(nextZips);
       window.location.hash = '#/';
     } catch (err) {
       setAuthMessage(err instanceof Error ? err.message : 'Sign out failed');
@@ -433,7 +570,7 @@ export default function App() {
                 {authUser && <button type="button" onClick={doSignOut}>Sign out</button>}
               </nav>
             </div>
-            {authUser && <p className="meta">Signed in as {authUser.email}</p>}
+            {authUser && <p className="meta signed-in-label-row">Signed in as {authUser.email}</p>}
             {showHeaderStatus && (
               <div className="header-status">
                 {health !== 'ok' && <span className="warning">Backend health: degraded</span>}
@@ -459,13 +596,16 @@ export default function App() {
             zipCodes={effectiveZipCodes}
             envByZip={envByZip}
             newsEntries={newsEntries}
+            resolveNewsSourceLabel={(sourceId) => newsSourceLabels.get(sourceId) ?? sourceId}
             happeningsEntries={happeningsEntries}
+            happeningsAttribution={happeningsAttribution}
             marketEntries={marketEntries}
           />
         ) : route === 'settings' ? (
           authUser ? (
           <SettingsPage
             zipCodes={zipCodes}
+            resolveZipLabel={(zip) => envByZip[zip]?.locationLabel ?? formatPlaceLabel(zip)}
             zipInput={zipInput}
             setZipInput={setZipInput}
             addZip={addZip}
@@ -479,6 +619,20 @@ export default function App() {
             removeSymbol={(symbol) => setWatchlist((previous) => previous.filter((value) => value !== symbol))}
             onRestorePlaces={restorePlacesDefaults}
             onRestoreWatchlist={restoreWatchlistDefaults}
+            availableNewsSources={catalogDefaults.defaultNewsSources}
+            selectedNewsSourceIds={selectedNewsSourceIds}
+            onToggleNewsSource={(sourceId, checked) => {
+              setSelectedNewsSourceIds((previous) => {
+                if (checked) {
+                  if (previous.includes(sourceId)) {
+                    return previous;
+                  }
+                  return [...previous, sourceId];
+                }
+                return previous.filter((id) => id !== sourceId);
+              });
+            }}
+            onRestoreNewsSources={restoreNewsSourceDefaults}
             onReset={resetSettingsToDefaults}
           />
           ) : authResolved ? (
@@ -507,9 +661,16 @@ export default function App() {
               const user = await login(values.email, values.password);
               setAuthUser(user);
               setSessionExpired(false);
+              setAuthMessage(null);
               const prefs = await fetchMyPreferences();
               setZipCodes(prefs.zipCodes);
               setWatchlist(prefs.watchlist);
+              setSelectedNewsSourceIds(
+                prefs.newsSourceIds.length > 0
+                  ? prefs.newsSourceIds
+                  : (catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES)
+              );
+              await refreshAfterAuthTransition(prefs.zipCodes);
               window.location.hash = consumeIntendedRoute();
             }}
           />
@@ -518,6 +679,7 @@ export default function App() {
             title="Sign up"
             description="Create an account to personalize your dashboard."
             submitLabel="Create account"
+            passwordRequirement="Password must be at least 8 characters."
             fields={[
               { key: 'email', label: 'Email', type: 'email' },
               { key: 'password', label: 'Password', type: 'password' }
@@ -526,6 +688,7 @@ export default function App() {
               const user = await signup(values.email, values.password);
               setAuthUser(user);
               setSessionExpired(false);
+              setAuthMessage(null);
               window.location.hash = consumeIntendedRoute();
             }}
           />
@@ -590,7 +753,9 @@ type HomePageProps = {
   zipCodes: string[];
   envByZip: Record<string, EnvStatus>;
   newsEntries: SignalsSnapshot['news'][string][];
+  resolveNewsSourceLabel: (sourceId: string) => string;
   happeningsEntries: LocalHappeningsSignal[];
+  happeningsAttribution: string;
   marketEntries: MarketQuoteSignal[];
 };
 
@@ -608,23 +773,28 @@ function HomePage(props: HomePageProps) {
                 <thead>
                   <tr>
                     <th>Place</th>
-                    <th>Weather</th>
+                    <th>Current Weather</th>
                     <th>Air Quality</th>
                   </tr>
                 </thead>
                 <tbody>
                   {props.zipCodes.map((zip) => {
-                    const env = props.envByZip[zip];
+                    const normalizedZip = normalizeZip(zip) ?? zip;
+                    const env = props.envByZip[normalizedZip] ?? props.envByZip[zip];
                     return (
-                      <tr key={zip}>
-                        <td>{formatPlaceLabel(zip)}</td>
+                      <tr key={normalizedZip}>
+                        <td>{env?.locationLabel ?? formatPlaceLabel(normalizedZip)}</td>
                         <td>
                           {env?.weather?.temperatureF != null ? (
                             <>
                               {weatherIcon(env.weather.forecast)} {env.weather.temperatureF.toFixed(1)} F, {env.weather.forecast}
                             </>
                           ) : (
-                            <span className="empty-inline">Waiting for first weather update for this ZIP.</span>
+                            <span className="empty-inline">
+                              {env?.weather?.forecast && env.weather.forecast !== 'Unknown'
+                                ? env.weather.forecast
+                                : 'Waiting for first weather update for this ZIP.'}
+                            </span>
                           )}
                           {env?.updatedAt && <div className="meta">{formatInstant(env.updatedAt)}</div>}
                         </td>
@@ -649,7 +819,10 @@ function HomePage(props: HomePageProps) {
           <div className="card-body">
             {props.newsEntries.length === 0 ? <p className="empty">No news signals yet.</p> : props.newsEntries.map((source) => (
               <article key={source.source} className="item">
-                <h3>{source.source}</h3>
+                <h3 className="news-source-heading">
+                  <NewsSourceLogo sourceId={source.source} />
+                  <span>{props.resolveNewsSourceLabel(source.source)}</span>
+                </h3>
                 {source.stories.length === 0 ? <p className="empty">No stories in current snapshot.</p> : (
                   <ul className="news-list top-news">
                     {source.stories.slice(0, 5).map((story, idx) => (
@@ -666,11 +839,18 @@ function HomePage(props: HomePageProps) {
       <section className="secondary-grid">
         <section className="card">
           <h2>Local What&apos;s Happening</h2>
+          <p className="meta section-description">{props.happeningsAttribution}</p>
           <div className="card-body">
             {props.happeningsEntries.length === 0 ? <p className="empty">No local places selected.</p> : props.happeningsEntries.map((entry) => (
               <article key={entry.location} className="item">
-                <h3>{formatPlaceLabel(entry.location)}</h3>
-                <ul>{entry.headlines.map((headline, index) => <li key={`${entry.location}-${index}`}>{headline}</li>)}</ul>
+                <h3>{entry.location.startsWith('lat:') ? 'Local area' : formatPlaceLabel(entry.location)}</h3>
+                <ul>
+                  {filterDisplayableHappeningItems(entry.items).map((item) => (
+                    <li key={item.id}>
+                      <a href={item.url} target="_blank" rel="noreferrer">{item.name}</a>
+                    </li>
+                  ))}
+                </ul>
               </article>
             ))}
           </div>
@@ -694,6 +874,7 @@ function HomePage(props: HomePageProps) {
 
 type SettingsPageProps = {
   zipCodes: string[];
+  resolveZipLabel: (zip: string) => string;
   zipInput: string;
   setZipInput: Dispatch<SetStateAction<string>>;
   addZip: () => 'added' | 'invalid' | 'duplicate' | 'limit';
@@ -707,6 +888,10 @@ type SettingsPageProps = {
   removeSymbol: (symbol: string) => void;
   onRestorePlaces: () => void;
   onRestoreWatchlist: () => void;
+  availableNewsSources: CatalogDefaults['defaultNewsSources'];
+  selectedNewsSourceIds: string[];
+  onToggleNewsSource: (sourceId: string, checked: boolean) => void;
+  onRestoreNewsSources: () => void;
   onReset: () => void;
 };
 
@@ -780,8 +965,15 @@ function SettingsPage(props: SettingsPageProps) {
           <div className="chips">
             {props.zipCodes.map((zip) => (
               <div key={zip} className="chip-item">
-                <span className="chip-label">{formatPlaceLabel(zip)}</span>
-                <button type="button" className="chip-remove" aria-label={`Remove ${formatPlaceLabel(zip)}`} onClick={() => props.removeZip(zip)}>x</button>
+                <span className="chip-label">{props.resolveZipLabel(zip)}</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  aria-label={`Remove ${props.resolveZipLabel(zip)}`}
+                  onClick={() => props.removeZip(zip)}
+                >
+                  x
+                </button>
               </div>
             ))}
           </div>
@@ -838,10 +1030,54 @@ function SettingsPage(props: SettingsPageProps) {
           <div className="chips">
             {props.watchlist.map((symbol) => (
               <div key={symbol} className="chip-item">
-                <span className="chip-label">{symbol}</span>
-                <button type="button" className="chip-remove" aria-label={`Remove ${symbol}`} onClick={() => props.removeSymbol(symbol)}>x</button>
+                <span className="chip-label">{formatMarketSymbolLabel(symbol)}</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  aria-label={`Remove ${formatMarketSymbolLabel(symbol)}`}
+                  onClick={() => props.removeSymbol(symbol)}
+                >
+                  x
+                </button>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="card controls">
+          <div className="card-title-row">
+            <h2>News Sources ({props.selectedNewsSourceIds.length})</h2>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                props.onRestoreNewsSources();
+                setResetHint('');
+              }}
+            >
+              Restore defaults
+            </button>
+          </div>
+          <p className="meta">Choose which sources appear in your news feed.</p>
+          <div className="news-source-grid">
+            {props.availableNewsSources.map((source) => {
+              const checked = props.selectedNewsSourceIds.includes(source.id);
+              const disabled = source.requiresConfig === true;
+              return (
+                <label key={source.id} className={`news-source-option ${disabled ? 'disabled' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={(event) => props.onToggleNewsSource(source.id, event.target.checked)}
+                  />
+                  <NewsSourceLogo sourceId={source.id} />
+                  <span>{source.name}</span>
+                  <span className="meta small">({source.type.toUpperCase()})</span>
+                  {disabled && <span className="meta small">{source.note ?? 'Requires additional configuration'}</span>}
+                </label>
+              );
+            })}
           </div>
         </section>
       </section>
@@ -881,6 +1117,7 @@ type AuthPageProps = {
   description: string;
   submitLabel: string;
   fields: AuthField[];
+  passwordRequirement?: string;
   onSubmit: (values: Record<'email' | 'password', string>) => Promise<void>;
 };
 
@@ -889,6 +1126,12 @@ function AuthPage(props: AuthPageProps) {
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const requiresMinPassword = props.passwordRequirement != null;
+  const hasPasswordField = props.fields.some((field) => field.key === 'password');
+  const passwordTooShort = requiresMinPassword && hasPasswordField && password.length > 0 && password.length < 8;
+  const passwordError = passwordTooShort ? props.passwordRequirement : null;
+  const passwordHelper = passwordError ?? props.passwordRequirement ?? null;
+  const disableSubmit = pending || (requiresMinPassword && hasPasswordField && password.length < 8);
 
   return (
     <main className="settings-page">
@@ -933,9 +1176,10 @@ function AuthPage(props: AuthPageProps) {
                 placeholder="********"
                 required
               />
+              {passwordHelper && <p className={passwordError ? 'meta inline-hint' : 'meta'}>{passwordHelper}</p>}
             </label>
           )}
-          <button type="submit" disabled={pending}>{pending ? 'Working...' : props.submitLabel}</button>
+          <button type="submit" disabled={disableSubmit}>{pending ? 'Working...' : props.submitLabel}</button>
         </form>
         {message && <p className="meta">{message}</p>}
         <p className="meta auth-links">
@@ -950,17 +1194,26 @@ function formatAuthError(error: unknown): string {
   if (!(error instanceof Error)) {
     return 'Request failed. Please try again.';
   }
-  if (error.message.includes('(401)')) {
-    return 'Invalid credentials. Please check your email and password.';
+  const status = getErrorStatus(error);
+  if (status === 400) {
+    return error.message;
   }
-  if (error.message.includes('(400)')) {
-    return 'Please review your input and try again.';
+  if (status === 401 || error.message.includes('(401)')) {
+    return 'Invalid credentials. Please check your email and password.';
   }
   return 'Request failed. Please try again.';
 }
 
 function isUnauthorizedError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('(401)');
+  return getErrorStatus(error) === 401 || (error instanceof Error && error.message.includes('(401)'));
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  const maybeStatus = (error as Error & { status?: unknown }).status;
+  return typeof maybeStatus === 'number' ? maybeStatus : null;
 }
 
 function handleSessionExpired(
@@ -1024,7 +1277,7 @@ function applyEnvironmentUpdate(
     }
 
     const previous = envByZip[zip];
-    const observedAt = toIsoTimestamp(event.observedAt ?? envelope.timestamp);
+    const observedAt = toIsoTimestamp(resolveEventTimestampMillis(event, envelope));
     const nextWeather = {
       temperatureF: asNumber(event.tempF),
       forecast: asString(event.conditions) ?? previous?.weather.forecast ?? 'Unknown',
@@ -1035,6 +1288,7 @@ function applyEnvironmentUpdate(
       ...envByZip,
       [zip]: {
         zip,
+        locationLabel: asString(event.locationLabel) ?? previous?.locationLabel ?? formatPlaceLabel(zip),
         lat: previous?.lat ?? 0,
         lon: previous?.lon ?? 0,
         weather: nextWeather,
@@ -1051,7 +1305,7 @@ function applyEnvironmentUpdate(
       return envByZip;
     }
     const previous = envByZip[zip];
-    const observedAt = toIsoTimestamp(event.observedAt ?? envelope.timestamp);
+    const observedAt = toIsoTimestamp(resolveEventTimestampMillis(event, envelope));
     const eventAqi = asNumber(event.aqi);
     const nextAqi = eventAqi == null
       ? {
@@ -1070,6 +1324,7 @@ function applyEnvironmentUpdate(
       ...envByZip,
       [zip]: {
         zip,
+        locationLabel: asString(event.locationLabel) ?? previous?.locationLabel ?? formatPlaceLabel(zip),
         lat: previous?.lat ?? 0,
         lon: previous?.lon ?? 0,
         weather: previous?.weather ?? {
@@ -1103,9 +1358,49 @@ function toIsoTimestamp(value: unknown): string {
     }
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return new Date(value * 1000).toISOString();
+    const millis = value > 10_000_000_000 ? value : value * 1000;
+    return new Date(millis).toISOString();
   }
   return new Date().toISOString();
+}
+
+function resolveEventTimestampMillis(payload: Record<string, unknown>, envelope: EventEnvelope): number {
+  const payloadMillis = asNumber(payload.fetchedAtEpochMillis);
+  if (payloadMillis != null && Number.isFinite(payloadMillis)) {
+    return payloadMillis;
+  }
+  return envelope.timestampEpochMillis;
+}
+
+function normalizeZip(value: string): string | null {
+  const trimmed = value.trim();
+  return /^\d{5}$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeZipCodes(values: string[]): string[] {
+  const normalized = new Set<string>();
+  values.forEach((value) => {
+    const zip = normalizeZip(value);
+    if (zip) {
+      normalized.add(zip);
+    }
+  });
+  return [...normalized];
+}
+
+function filterDisplayableHappeningItems(items: LocalHappeningsSignal['items']): LocalHappeningsSignal['items'] {
+  const seenTitles = new Set<string>();
+  return items.filter((item) => {
+    const title = item.name.trim();
+    if (title.length === 0 || item.url.trim().length === 0) {
+      return false;
+    }
+    if (seenTitles.has(title)) {
+      return false;
+    }
+    seenTitles.add(title);
+    return true;
+  });
 }
 
 function readRouteFromHash(): RouteName {
@@ -1140,6 +1435,14 @@ function readResetTokenFromHash(): string | null {
   return decodeURIComponent(hash.substring(index + marker.length));
 }
 
+function NewsSourceLogo({ sourceId }: { sourceId: string }) {
+  const logo = NEWS_LOGO_BY_SOURCE_ID[sourceId];
+  if (!logo) {
+    return <span className="news-logo-fallback">{sourceId.toUpperCase()}</span>;
+  }
+  return <img className="news-logo-img" src={logo.src} alt={logo.alt} loading="lazy" />;
+}
+
 function weatherIcon(conditions: string): string {
   const value = conditions.toLowerCase();
   if (value.includes('rain') || value.includes('storm')) {
@@ -1151,10 +1454,24 @@ function weatherIcon(conditions: string): string {
   return '☀️';
 }
 
-function formatInstant(value: string | null | undefined): string {
-  if (!value) {
+function formatInstant(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') {
     return '-';
   }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const millis = value > 10_000_000_000 ? value : value * 1000;
+    const parsed = new Date(millis);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+  }
+  if (typeof value === 'string') {
+    const numeric = Number.parseFloat(value);
+    if (Number.isFinite(numeric) && /^\d+(\.\d+)?$/.test(value.trim())) {
+      const millis = numeric > 10_000_000_000 ? numeric : numeric * 1000;
+      const parsed = new Date(millis);
+      return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  }
+  return String(value);
 }

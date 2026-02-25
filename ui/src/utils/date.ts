@@ -2,6 +2,10 @@ export function epochSecondsToDate(v: number): Date {
   return new Date(v * 1000);
 }
 
+export function epochMillisToDate(v: number): Date {
+  return new Date(v);
+}
+
 export function formatDateTimeValue(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === '') {
     return '—';
@@ -21,7 +25,7 @@ export function formatDateTimeValue(value: number | string | null | undefined): 
 }
 
 export function formatEpochSecondsTime(v: number): string {
-  const d = epochSecondsToDate(v);
+  const d = epochMillisToDate(v);
   if (Number.isNaN(d.getTime())) {
     return '-';
   }
@@ -29,7 +33,7 @@ export function formatEpochSecondsTime(v: number): string {
 }
 
 export function formatEpochSecondsDateTime(v: number): string {
-  const d = epochSecondsToDate(v);
+  const d = epochMillisToDate(v);
   if (Number.isNaN(d.getTime())) {
     return '-';
   }

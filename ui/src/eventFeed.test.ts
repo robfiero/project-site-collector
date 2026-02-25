@@ -18,7 +18,8 @@ describe('normalizeEventEnvelope', () => {
     const result = normalizeEventEnvelope(wrapped);
     expect(result).toEqual({
       type: 'WeatherUpdated',
-      timestamp: 1700000000.25,
+      timestampEpochMillis: 1700000000250,
+      timestamp: 1700000000250,
       event: wrapped.event
     });
   });
@@ -32,7 +33,7 @@ describe('normalizeEventEnvelope', () => {
     };
     const result = normalizeEventEnvelope(raw);
     expect(result?.type).toBe('AlertRaised');
-    expect(result?.timestamp).toBe(1700000001.5);
+    expect(result?.timestampEpochMillis).toBe(1700000001500);
     expect(result?.event.message).toBe('timeout');
   });
 });
@@ -41,12 +42,12 @@ describe('summarizeEvent', () => {
   it('summarizes collector ticks', () => {
     const started: EventEnvelope = {
       type: 'CollectorTickStarted',
-      timestamp: 1700000000,
+      timestampEpochMillis: 1700000000000,
       event: { collectorName: 'siteCollector' }
     };
     const completed: EventEnvelope = {
       type: 'CollectorTickCompleted',
-      timestamp: 1700000001,
+      timestampEpochMillis: 1700000001000,
       event: { collectorName: 'siteCollector', success: true, durationMillis: 1234 }
     };
     expect(summarizeEvent(started)).toBe('collector siteCollector started');
@@ -56,22 +57,22 @@ describe('summarizeEvent', () => {
   it('summarizes alerts, site fetch, weather, and env updates', () => {
     const alert: EventEnvelope = {
       type: 'AlertRaised',
-      timestamp: 1700000000,
+      timestampEpochMillis: 1700000000000,
       event: { category: 'collector', message: 'dns failure' }
     };
     const siteFetched: EventEnvelope = {
       type: 'SiteFetched',
-      timestamp: 1700000000,
+      timestampEpochMillis: 1700000000000,
       event: { siteId: 'docs', status: 200, durationMillis: 55 }
     };
     const weather: EventEnvelope = {
       type: 'WeatherUpdated',
-      timestamp: 1700000000,
+      timestampEpochMillis: 1700000000000,
       event: { location: 'Boston', tempF: 37.4, conditions: 'Cloudy' }
     };
     const envWeather: EventEnvelope = {
       type: 'EnvWeatherUpdated',
-      timestamp: 1700000000,
+      timestampEpochMillis: 1700000000000,
       event: {
         zip: '02108',
         lat: 42.35,
@@ -88,7 +89,7 @@ describe('summarizeEvent', () => {
     };
     const envAqi: EventEnvelope = {
       type: 'EnvAqiUpdated',
-      timestamp: 1700000000,
+      timestampEpochMillis: 1700000000000,
       event: {
         zip: '02108',
         lat: 42.35,
@@ -118,9 +119,9 @@ describe('summarizeEvent', () => {
 
 describe('filterEvents', () => {
   const events: EventEnvelope[] = [
-    { type: 'AlertRaised', timestamp: 1, event: { category: 'collector', message: 'dns failure' } },
-    { type: 'SiteFetched', timestamp: 2, event: { siteId: 'docs', status: 200 } },
-    { type: 'WeatherUpdated', timestamp: 3, event: { location: 'Boston', conditions: 'Cloudy' } }
+    { type: 'AlertRaised', timestampEpochMillis: 1, event: { category: 'collector', message: 'dns failure' } },
+    { type: 'SiteFetched', timestampEpochMillis: 2, event: { siteId: 'docs', status: 200 } },
+    { type: 'WeatherUpdated', timestampEpochMillis: 3, event: { location: 'Boston', conditions: 'Cloudy' } }
   ];
 
   it('filters by type and keeps newest-first order', () => {

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CBS News - Latest</title>
+    <item>
+      <title>CBS headline one</title>
+      <link>https://www.cbsnews.com/news/story-one/</link>
+      <pubDate>Tue, 17 Feb 2026 14:30:00 GMT</pubDate>
+      <description>Example description one.</description>
+    </item>
+    <item>
+      <title>CBS headline two</title>
+      <link>https://www.cbsnews.com/news/story-two/</link>
+      <pubDate>Tue, 17 Feb 2026 13:00:00 GMT</pubDate>
+      <description>Example description two.</description>
+    </item>
+  </channel>
+</rss>

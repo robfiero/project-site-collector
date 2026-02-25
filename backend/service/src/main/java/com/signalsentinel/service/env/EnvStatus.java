@@ -4,6 +4,7 @@ import java.time.Instant;
 
 public record EnvStatus(
         String zip,
+        String locationLabel,
         double lat,
         double lon,
         Weather weather,

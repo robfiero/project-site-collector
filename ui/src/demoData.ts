@@ -16,10 +16,31 @@ export function demoLocalHappenings(zip: string): LocalHappeningsSignal {
   const themes = ['Farmers Market', 'Live Music', 'School Event', 'Road Closure', 'Community Meetup'];
   return {
     location: zip,
-    headlines: [
-      `${themes[seed % themes.length]} this evening`,
-      `${themes[(seed + 2) % themes.length]} this weekend`
+    items: [
+      {
+        id: `${zip}-demo-1`,
+        name: `${themes[seed % themes.length]} this evening`,
+        startDateTime: new Date().toISOString(),
+        venueName: 'Community Center',
+        city: 'Local',
+        state: '',
+        url: '',
+        category: 'community',
+        source: 'ticketmaster'
+      },
+      {
+        id: `${zip}-demo-2`,
+        name: `${themes[(seed + 2) % themes.length]} this weekend`,
+        startDateTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        venueName: 'Downtown',
+        city: 'Local',
+        state: '',
+        url: '',
+        category: 'community',
+        source: 'ticketmaster'
+      }
     ],
+    sourceAttribution: 'Powered by Ticketmaster',
     updatedAt: new Date().toISOString()
   };
 }

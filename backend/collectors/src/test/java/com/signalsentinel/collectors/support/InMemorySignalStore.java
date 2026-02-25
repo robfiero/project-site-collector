@@ -1,6 +1,7 @@
 package com.signalsentinel.collectors.support;
 
 import com.signalsentinel.collectors.api.SignalStore;
+import com.signalsentinel.core.model.LocalHappeningsSignal;
 import com.signalsentinel.core.model.NewsSignal;
 import com.signalsentinel.core.model.SiteSignal;
 import com.signalsentinel.core.model.WeatherSignal;
@@ -13,6 +14,7 @@ public class InMemorySignalStore implements SignalStore {
     private final Map<String, SiteSignal> sites = new ConcurrentHashMap<>();
     private final Map<String, NewsSignal> news = new ConcurrentHashMap<>();
     private final Map<String, WeatherSignal> weather = new ConcurrentHashMap<>();
+    private final Map<String, LocalHappeningsSignal> localHappenings = new ConcurrentHashMap<>();
 
     @Override
     public Optional<SiteSignal> getSite(String siteId) {
@@ -34,11 +36,20 @@ public class InMemorySignalStore implements SignalStore {
         weather.put(signal.location(), signal);
     }
 
+    @Override
+    public void putLocalHappenings(LocalHappeningsSignal signal) {
+        localHappenings.put(signal.location(), signal);
+    }
+
     public Optional<NewsSignal> getNews(String source) {
         return Optional.ofNullable(news.get(source));
     }
 
     public Optional<WeatherSignal> getWeather(String location) {
         return Optional.ofNullable(weather.get(location));
+    }
+
+    public Optional<LocalHappeningsSignal> getLocalHappenings(String location) {
+        return Optional.ofNullable(localHappenings.get(location));
     }
 }

@@ -1,0 +1,16 @@
+<rss version="2.0">
+  <channel>
+    <title>NPR News Now</title>
+    <item>
+      <title>Top headlines this hour</title>
+      <guid>https://www.npr.org/podcasts/example-episode-1</guid>
+      <enclosure url="https://chrt.fm/track/example1.mp3" type="audio/mpeg"/>
+      <pubDate>Tue, 10 Feb 2026 11:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Morning briefing</title>
+      <enclosure url="https://chrt.fm/track/example2.mp3" type="audio/mpeg"/>
+      <pubDate>Tue, 10 Feb 2026 12:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

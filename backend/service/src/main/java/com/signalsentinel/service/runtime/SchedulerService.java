@@ -7,8 +7,10 @@ import com.signalsentinel.core.events.AlertRaised;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -47,10 +49,22 @@ public class SchedulerService {
     }
 
     public List<CollectorResult> runOnceAllCollectors() {
+        return runOnceCollectors(List.of());
+    }
+
+    public List<CollectorResult> runOnceCollectors(List<String> collectorNames) {
+        Set<String> requested = collectorNames == null ? Set.of() : collectorNames.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(name -> !name.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         try (var scope = java.util.concurrent.StructuredTaskScope.open()) {
             List<java.util.concurrent.StructuredTaskScope.Subtask<CollectorResult>> tasks = new ArrayList<>();
             for (ScheduledCollector scheduled : collectors) {
                 if (!scheduled.enabled()) {
+                    continue;
+                }
+                if (!requested.isEmpty() && !requested.contains(scheduled.collector().name())) {
                     continue;
                 }
                 tasks.add(scope.fork(() -> runCollectorSafely(scheduled.collector())));

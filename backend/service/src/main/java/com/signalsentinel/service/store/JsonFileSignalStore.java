@@ -1,6 +1,7 @@
 package com.signalsentinel.service.store;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.signalsentinel.core.model.LocalHappeningsSignal;
 import com.signalsentinel.core.model.NewsSignal;
 import com.signalsentinel.core.model.SiteSignal;
 import com.signalsentinel.core.model.WeatherSignal;
@@ -25,6 +26,7 @@ public class JsonFileSignalStore implements ServiceSignalStore {
     private final Map<String, SiteSignal> sites = new ConcurrentHashMap<>();
     private final Map<String, NewsSignal> news = new ConcurrentHashMap<>();
     private final Map<String, WeatherSignal> weather = new ConcurrentHashMap<>();
+    private final Map<String, LocalHappeningsSignal> localHappenings = new ConcurrentHashMap<>();
 
     public JsonFileSignalStore(Path file) {
         this.file = file;
@@ -55,11 +57,18 @@ public class JsonFileSignalStore implements ServiceSignalStore {
     }
 
     @Override
+    public void putLocalHappenings(LocalHappeningsSignal signal) {
+        localHappenings.put(signal.location(), signal);
+        persist();
+    }
+
+    @Override
     public Map<String, Object> getAllSignals() {
         Map<String, Object> snapshot = new HashMap<>();
         snapshot.put("sites", new HashMap<>(sites));
         snapshot.put("news", new HashMap<>(news));
         snapshot.put("weather", new HashMap<>(weather));
+        snapshot.put("localHappenings", new HashMap<>(localHappenings));
         return snapshot;
     }
 
@@ -80,6 +89,9 @@ public class JsonFileSignalStore implements ServiceSignalStore {
                 if (loaded.weather() != null) {
                     weather.putAll(loaded.weather());
                 }
+                if (loaded.localHappenings() != null) {
+                    localHappenings.putAll(loaded.localHappenings());
+                }
             }
         } catch (IOException e) {
             throw new IllegalStateException("Failed loading signals from " + file, e);
@@ -94,7 +106,12 @@ public class JsonFileSignalStore implements ServiceSignalStore {
             Files.createDirectories(file.getParent());
             try (OutputStream out = Files.newOutputStream(file)) {
                 MAPPER.writerWithDefaultPrettyPrinter().writeValue(out,
-                        new SignalSnapshotFile(new HashMap<>(sites), new HashMap<>(news), new HashMap<>(weather)));
+                        new SignalSnapshotFile(
+                                new HashMap<>(sites),
+                                new HashMap<>(news),
+                                new HashMap<>(weather),
+                                new HashMap<>(localHappenings)
+                        ));
             }
         } catch (IOException e) {
             throw new IllegalStateException("Failed writing signals to " + file, e);
@@ -106,7 +123,8 @@ public class JsonFileSignalStore implements ServiceSignalStore {
     private record SignalSnapshotFile(
             Map<String, SiteSignal> sites,
             Map<String, NewsSignal> news,
-            Map<String, WeatherSignal> weather
+            Map<String, WeatherSignal> weather,
+            Map<String, LocalHappeningsSignal> localHappenings
     ) {
     }
 }

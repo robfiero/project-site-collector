@@ -121,8 +121,9 @@ class CollectorContractTest {
                 Map.of(RssNewsCollector.CONFIG_KEY, cfg)
         );
 
-        CollectorContractAssertions.assertContract(collector, ctx, capture, Duration.ofSeconds(2), true);
+        var result = CollectorContractAssertions.assertContract(collector, ctx, capture, Duration.ofSeconds(2), false);
         CollectorInvariantAssertions.assertTickEnvelope(capture, collector.name());
+        assertTrue(result.success(), "rss collector should report partial success when at least one source succeeds");
         assertTrue(capture.byType(AlertRaised.class).stream().anyMatch(alert -> "collector".equals(alert.category())));
     }
 

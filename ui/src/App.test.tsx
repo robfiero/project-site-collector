@@ -10,6 +10,13 @@ vi.mock('./api', () => ({
   fetchCollectorStatus: vi.fn(async () => ({})),
   fetchCatalogDefaults: vi.fn(async () => ({ defaultZipCodes: ['02108'], defaultNewsSources: [], defaultWatchlist: ['AAPL'] })),
   fetchConfigView: vi.fn(async () => ({ collectors: [] })),
+  fetchNewsSourceSettings: vi.fn(async () => ({
+    availableSources: [
+      { id: 'cnn', name: 'CNN', type: 'rss', url: 'https://example.com/cnn' },
+      { id: 'wsj', name: 'WSJ', type: 'rss', url: 'https://example.com/wsj' }
+    ],
+    effectiveSelectedSources: ['cnn', 'wsj']
+  })),
   fetchEnvironment: vi.fn(async () => ([])),
   fetchMe: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
   fetchMyPreferences: vi.fn(async () => ({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })),
@@ -18,6 +25,7 @@ vi.mock('./api', () => ({
   login: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
   signup: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
   logout: vi.fn(async () => {}),
+  triggerCollectorRefresh: vi.fn(async () => {}),
   forgotPassword: vi.fn(async () => {}),
   resetPassword: vi.fn(async () => {})
 }));
@@ -93,9 +101,11 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: /places/i })).toBeTruthy());
     expect(screen.getByRole('heading', { name: /watchlist/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /news sources/i })).toBeTruthy();
+    expect((screen.getByLabelText(/CNN/i) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText('Boston, MA (02108)')).toBeTruthy();
     expect(screen.getByText('Seattle, WA (98101)')).toBeTruthy();
-    expect(screen.getByText('AAPL')).toBeTruthy();
+    expect(screen.getByText(/AAPL/)).toBeTruthy();
   });
 
   it('adds ZIP and symbol using Enter key in settings', async () => {
@@ -113,7 +123,7 @@ describe('App', () => {
     fireEvent.submit(symbolInput.closest('form') as HTMLFormElement);
 
     expect(screen.getByText('ZIP 60601')).toBeTruthy();
-    expect(screen.getByText('TSLA')).toBeTruthy();
+    expect(screen.getByText(/TSLA/)).toBeTruthy();
   });
 
   it('shows inline validation and disables Add buttons for invalid settings input', async () => {
@@ -148,13 +158,13 @@ describe('App', () => {
     const symbolInput = screen.getByPlaceholderText('Symbol (e.g., NVDA)');
     fireEvent.change(symbolInput, { target: { value: 'aapl' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add Symbol' }));
-    expect(screen.getAllByText('AAPL').length).toBe(1);
+    expect(screen.getAllByText(/AAPL/).length).toBe(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }));
     expect(window.confirm).toHaveBeenCalled();
     expect(screen.getByText('Reset complete')).toBeTruthy();
     expect(screen.getByText('Boston, MA (02108)')).toBeTruthy();
-    expect(screen.getByText('AAPL')).toBeTruthy();
+    expect(screen.getByText(/AAPL/)).toBeTruthy();
     await waitFor(() => expect(localStorage.getItem('signal-sentinel:zip-codes')).toContain('02108'));
     await waitFor(() => expect(localStorage.getItem('signal-sentinel:watchlist')).toContain('AAPL'));
   });
@@ -174,10 +184,21 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText('ZIP 60601')).toBeTruthy());
     fireEvent.click(screen.getAllByRole('button', { name: 'Restore defaults' })[0]);
     expect(screen.getByText('Boston, MA (02108)')).toBeTruthy();
-    expect(screen.getByText('TSLA')).toBeTruthy();
+    expect(screen.getByText(/TSLA/)).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Restore defaults' })[1]);
-    expect(screen.getByText('AAPL')).toBeTruthy();
+    expect(screen.getByText(/AAPL/)).toBeTruthy();
+  });
+
+  it('forces refresh when navigating from settings back to home', async () => {
+    const api = await import('./api');
+    window.location.hash = '#/settings';
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /places/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole('link', { name: 'Home' }));
+
+    await waitFor(() => expect(api.triggerCollectorRefresh).toHaveBeenCalled());
   });
 
   it('renders home useful panels without settings controls and shows environment rows', async () => {
@@ -197,6 +218,7 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'Places' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Markets Watchlist' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Air Quality (AQI)' })).toBeNull();
+    expect(screen.getByText('Powered by Ticketmaster')).toBeTruthy();
     expect(screen.getAllByText('Boston, MA (02108)').length).toBeGreaterThan(0);
     expect(screen.getByText('AQI unavailable')).toBeTruthy();
     expect(screen.getByText('Waiting for first weather update for this ZIP.')).toBeTruthy();
@@ -227,7 +249,147 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByText(/72\.5 F, Clear/)).toBeTruthy());
     await waitFor(() => expect(screen.getByText((_, node) => node?.textContent === 'AQI 42 - Good')).toBeTruthy());
+    expect(screen.queryByText(/1970/)).toBeNull();
     expect(screen.getByText('No symbols in watchlist.')).toBeTruthy();
+  });
+
+  it('deduplicates local happenings by title and hides items without links', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
+      sites: {},
+      news: {},
+      weather: {},
+      localHappenings: {
+        '02108': {
+          location: '02108',
+          sourceAttribution: 'Powered by Ticketmaster',
+          updatedAt: '2026-02-25T12:00:00Z',
+          items: [
+            {
+              id: 'evt-1',
+              name: 'Jazz Night',
+              startDateTime: '2026-03-10T20:00:00Z',
+              venueName: 'Venue A',
+              city: 'Boston',
+              state: 'MA',
+              url: 'https://example.com/jazz-night',
+              category: 'music',
+              source: 'ticketmaster'
+            },
+            {
+              id: 'evt-2',
+              name: 'Jazz Night',
+              startDateTime: '2026-03-11T20:00:00Z',
+              venueName: 'Venue B',
+              city: 'Boston',
+              state: 'MA',
+              url: 'https://example.com/jazz-night-duplicate',
+              category: 'music',
+              source: 'ticketmaster'
+            },
+            {
+              id: 'evt-3',
+              name: 'No Link Event',
+              startDateTime: '2026-03-09T20:00:00Z',
+              venueName: 'Venue C',
+              city: 'Boston',
+              state: 'MA',
+              url: '',
+              category: 'arts',
+              source: 'ticketmaster'
+            },
+            {
+              id: 'evt-4',
+              name: 'Comedy Show',
+              startDateTime: '2026-03-12T20:00:00Z',
+              venueName: 'Venue D',
+              city: 'Boston',
+              state: 'MA',
+              url: 'https://example.com/comedy-show',
+              category: 'arts',
+              source: 'ticketmaster'
+            }
+          ]
+        }
+      }
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: "Today's Overview" })).toBeTruthy());
+    const jazzLink = screen.getByRole('link', { name: 'Jazz Night' });
+    expect(jazzLink.getAttribute('href')).toBe('https://example.com/jazz-night');
+    expect(screen.getAllByRole('link', { name: 'Jazz Night' })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Comedy Show' })).toBeTruthy();
+    expect(screen.queryByText('No Link Event')).toBeNull();
+  });
+
+  it('formats numeric env updatedAt as epoch-seconds, not 1970', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108'],
+      watchlist: [],
+      newsSourceIds: []
+    });
+    vi.mocked(api.fetchEnvironment).mockResolvedValueOnce([
+      {
+        zip: '02108',
+        lat: 42.35,
+        lon: -71.06,
+        weather: {
+          temperatureF: 70,
+          forecast: 'Clear',
+          windSpeed: '5 mph',
+          observedAt: '2026-02-18T12:00:00Z'
+        },
+        aqi: {
+          aqi: 42,
+          category: 'Good',
+          observedAt: '2026-02-18T12:00:00Z',
+          message: null
+        },
+        updatedAt: 1771105748.313279 as unknown as string
+      }
+    ]);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Environment' })).toBeTruthy());
+    expect(screen.queryByText(/1970/)).toBeNull();
+  });
+
+  it('shows backend ZIP resolution guidance when weather cannot resolve location', async () => {
+    const api = await import('./api');
+    localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['53201']));
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['53201'],
+      watchlist: [],
+      newsSourceIds: []
+    });
+    vi.mocked(api.fetchEnvironment).mockResolvedValue([
+      {
+        zip: '53201',
+        locationLabel: 'ZIP 53201',
+        lat: Number.NaN,
+        lon: Number.NaN,
+        weather: {
+          temperatureF: null,
+          forecast: 'Unable to resolve ZIP to location. Try a nearby ZIP code.',
+          windSpeed: '',
+          observedAt: '2026-02-19T10:00:00Z'
+        },
+        aqi: {
+          aqi: null,
+          category: null,
+          observedAt: '2026-02-19T10:00:00Z',
+          message: 'Unable to resolve ZIP to location. Try a nearby ZIP code.'
+        },
+        updatedAt: '2026-02-19T10:00:00Z'
+      }
+    ]);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Environment' })).toBeTruthy());
+    expect(screen.getAllByText('Unable to resolve ZIP to location. Try a nearby ZIP code.').length).toBeGreaterThan(0);
   });
 
   it('renders envelope-format events in admin feed', async () => {
@@ -388,6 +550,32 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: /settings/i })).toBeTruthy());
   });
 
+  it('signup enforces min password length and surfaces backend 400 error message', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    const badRequest = Object.assign(new Error('Password must be at least 8 characters'), { status: 400 });
+    vi.mocked(api.signup).mockRejectedValueOnce(badRequest);
+    window.location.hash = '#/signup';
+
+    render(<App />);
+
+    const passwordInput = await screen.findByPlaceholderText('********');
+    const submitButton = screen.getByRole('button', { name: 'Create account' });
+    expect(screen.getByText('Password must be at least 8 characters.')).toBeTruthy();
+
+    fireEvent.change(passwordInput, { target: { value: 'short' } });
+    expect(submitButton.hasAttribute('disabled')).toBe(true);
+    expect(screen.getAllByText('Password must be at least 8 characters.')).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'long-enough-password' } });
+    expect(submitButton.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(submitButton);
+
+    await waitFor(() => expect(api.signup).toHaveBeenCalledWith('user@example.com', 'long-enough-password'));
+    await waitFor(() => expect(screen.getByText('Password must be at least 8 characters')).toBeTruthy());
+  });
+
   it('redirects back to intended protected route after login', async () => {
     const api = await import('./api');
     vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
@@ -437,7 +625,7 @@ describe('App', () => {
       expect(api.saveMyPreferences).toHaveBeenLastCalledWith({
         zipCodes: ['02108', '98101'],
         watchlist: ['AAPL'],
-        newsSourceIds: []
+        newsSourceIds: ['cnn', 'wsj']
       })
     );
     await waitFor(() => expect(screen.getByText('Saved ✅')).toBeTruthy());
@@ -451,8 +639,8 @@ describe('App', () => {
       newsSourceIds: []
     });
     vi.mocked(api.saveMyPreferences)
-      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })
-      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })
+      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'] })
+      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'] })
       .mockRejectedValueOnce(new Error('Preferences update failed (401)'));
     window.location.hash = '#/settings';
 

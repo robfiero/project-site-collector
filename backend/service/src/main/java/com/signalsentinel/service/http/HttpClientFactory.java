@@ -17,7 +17,9 @@ public final class HttpClientFactory {
     }
 
     public static HttpClient create(Duration connectTimeout) {
-        HttpClient.Builder builder = HttpClient.newBuilder().connectTimeout(connectTimeout);
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .followRedirects(HttpClient.Redirect.NORMAL);
         SSLContext sslContext = sslContextFromEnvironment(System.getenv());
         if (sslContext != null) {
             builder.sslContext(sslContext);
@@ -26,7 +28,9 @@ public final class HttpClientFactory {
     }
 
     static HttpClient create(Duration connectTimeout, Map<String, String> environment) {
-        HttpClient.Builder builder = HttpClient.newBuilder().connectTimeout(connectTimeout);
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .followRedirects(HttpClient.Redirect.NORMAL);
         SSLContext sslContext = sslContextFromEnvironment(environment);
         if (sslContext != null) {
             builder.sslContext(sslContext);

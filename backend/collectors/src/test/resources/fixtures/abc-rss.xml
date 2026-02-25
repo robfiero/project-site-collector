@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>ABC News - Top Stories</title>
+    <item>
+      <title>ABC headline one</title>
+      <link>https://abcnews.go.com/US/story-one</link>
+      <pubDate>Tue, 17 Feb 2026 15:00:00 GMT</pubDate>
+      <description>Example description one.</description>
+    </item>
+    <item>
+      <title>ABC headline two</title>
+      <link>https://abcnews.go.com/Politics/story-two</link>
+      <pubDate>Tue, 17 Feb 2026 14:00:00 GMT</pubDate>
+      <description>Example description two.</description>
+    </item>
+  </channel>
+</rss>

@@ -37,11 +37,11 @@ export default function EventStreamCard(props: EventStreamCardProps) {
       <p className="meta">Showing {props.filteredEvents.length} events (max stored: {props.maxEvents})</p>
       <div className="event-list">
         {props.filteredEvents.length === 0 ? <p className="empty">No events match current filters.</p> : props.filteredEvents.map((entry, index) => (
-          <article key={`${entry.timestamp}-${index}`} className={`event-item event-card ${eventTone(entry.type)}`}>
+          <article key={`${entry.timestampEpochMillis}-${index}`} className={`event-item event-card ${eventTone(entry.type)}`}>
             <div className="event-title event-row">
               <div className="event-time-group">
-                <span className="event-time" title={formatEpochSecondsDateTime(entry.timestamp)}>
-                  {relativeTime(entry.timestamp)} ({formatEpochSecondsTime(entry.timestamp)})
+                <span className="event-time" title={formatEpochSecondsDateTime(entry.timestampEpochMillis)}>
+                  {relativeTime(entry.timestampEpochMillis)} ({formatEpochSecondsTime(entry.timestampEpochMillis)})
                 </span>
               </div>
               <span className="event-type-badge">{entry.type}</span>
@@ -59,7 +59,7 @@ export default function EventStreamCard(props: EventStreamCardProps) {
 }
 
 function eventRowId(entry: EventEnvelope, index: number): string {
-  return `${entry.type}-${entry.timestamp}-${index}`;
+  return `${entry.type}-${entry.timestampEpochMillis}-${index}`;
 }
 
 function toggleExpanded(rowId: string, setExpandedEvents: Dispatch<SetStateAction<Set<string>>>): void {
@@ -74,8 +74,8 @@ function toggleExpanded(rowId: string, setExpandedEvents: Dispatch<SetStateActio
   });
 }
 
-function relativeTime(epochSeconds: number): string {
-  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - epochSeconds));
+function relativeTime(epochMillis: number): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - epochMillis) / 1000));
   if (seconds < 60) {
     return `${seconds}s ago`;
   }

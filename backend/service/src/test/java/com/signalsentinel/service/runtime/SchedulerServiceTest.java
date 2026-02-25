@@ -131,6 +131,86 @@ class SchedulerServiceTest {
         assertEquals(50, runs.get());
     }
 
+    @Test
+    void startThenShutdownIsIdempotent() throws Exception {
+        AtomicInteger runs = new AtomicInteger();
+        Collector collector = collector("idempotent", () -> {
+            runs.incrementAndGet();
+            return CollectorResult.success("ok", Map.of());
+        });
+
+        SchedulerService scheduler = new SchedulerService(
+                List.of(new SchedulerService.ScheduledCollector(collector, Duration.ofMillis(5), true)),
+                context(new EventBus()),
+                5
+        );
+
+        scheduler.start();
+        Thread.sleep(20);
+        scheduler.shutdown();
+        scheduler.shutdown();
+        int afterShutdown = runs.get();
+        Thread.sleep(20);
+        assertTrue(runs.get() <= afterShutdown + 1);
+    }
+
+    @Test
+    void disabledCollectorIsNotScheduled() throws Exception {
+        AtomicInteger enabledRuns = new AtomicInteger();
+        AtomicInteger disabledRuns = new AtomicInteger();
+        Collector enabled = collector("enabled", () -> {
+            enabledRuns.incrementAndGet();
+            return CollectorResult.success("ok", Map.of());
+        });
+        Collector disabled = collector("disabled", () -> {
+            disabledRuns.incrementAndGet();
+            return CollectorResult.success("ok", Map.of());
+        });
+
+        SchedulerService scheduler = new SchedulerService(
+                List.of(
+                        new SchedulerService.ScheduledCollector(enabled, Duration.ofMillis(5), true),
+                        new SchedulerService.ScheduledCollector(disabled, Duration.ofMillis(5), false)
+                ),
+                context(new EventBus()),
+                5
+        );
+
+        scheduler.start();
+        Thread.sleep(30);
+        scheduler.shutdown();
+
+        assertTrue(enabledRuns.get() > 0);
+        assertEquals(0, disabledRuns.get());
+    }
+
+    @Test
+    void runOnceCollectorsRunsOnlyRequestedNames() {
+        AtomicInteger runsA = new AtomicInteger();
+        AtomicInteger runsB = new AtomicInteger();
+        Collector a = collector("a", () -> {
+            runsA.incrementAndGet();
+            return CollectorResult.success("ok", Map.of());
+        });
+        Collector b = collector("b", () -> {
+            runsB.incrementAndGet();
+            return CollectorResult.success("ok", Map.of());
+        });
+
+        SchedulerService scheduler = new SchedulerService(
+                List.of(
+                        new SchedulerService.ScheduledCollector(a, Duration.ofMillis(10), true),
+                        new SchedulerService.ScheduledCollector(b, Duration.ofMillis(10), true)
+                ),
+                context(new EventBus())
+        );
+
+        List<CollectorResult> results = scheduler.runOnceCollectors(List.of("b"));
+        assertEquals(1, results.size());
+        assertEquals(0, runsA.get());
+        assertEquals(1, runsB.get());
+    }
+
     private Collector collector(String name, java.util.concurrent.Callable<CollectorResult> behavior) {
         return new Collector() {
             @Override

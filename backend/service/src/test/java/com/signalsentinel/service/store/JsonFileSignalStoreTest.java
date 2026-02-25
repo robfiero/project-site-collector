@@ -3,6 +3,8 @@ package com.signalsentinel.service.store;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.signalsentinel.core.model.NewsSignal;
 import com.signalsentinel.core.model.NewsStory;
+import com.signalsentinel.core.model.HappeningItem;
+import com.signalsentinel.core.model.LocalHappeningsSignal;
 import com.signalsentinel.core.model.SiteSignal;
 import com.signalsentinel.core.model.WeatherSignal;
 import com.signalsentinel.core.util.JsonUtils;
@@ -53,9 +55,11 @@ class JsonFileSignalStoreTest {
         assertNotNull(all.get("sites"));
         assertNotNull(all.get("news"));
         assertNotNull(all.get("weather"));
+        assertNotNull(all.get("localHappenings"));
         assertEquals(0, ((Map<?, ?>) all.get("sites")).size());
         assertEquals(0, ((Map<?, ?>) all.get("news")).size());
         assertEquals(0, ((Map<?, ?>) all.get("weather")).size());
+        assertEquals(0, ((Map<?, ?>) all.get("localHappenings")).size());
     }
 
     @Test
@@ -256,6 +260,36 @@ class JsonFileSignalStoreTest {
         Map<String, Object> all = reloaded.getAllSignals();
         assertEquals(newsSignal, ((Map<String, NewsSignal>) all.get("news")).get("feed"));
         assertEquals(weatherSignal, ((Map<String, WeatherSignal>) all.get("weather")).get("Boston"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void putLocalHappeningsRoundTrip() throws Exception {
+        Path tempDir = Files.createTempDirectory("signal-store-happenings-");
+        Path file = tempDir.resolve("state/signals.json");
+        JsonFileSignalStore store = new JsonFileSignalStore(file);
+
+        LocalHappeningsSignal signal = new LocalHappeningsSignal(
+                "lat:42.3600,lon:-71.0600",
+                List.of(new HappeningItem(
+                        "evt-1",
+                        "Live Show",
+                        "2026-03-01T18:00:00Z",
+                        "Music Hall",
+                        "Boston",
+                        "MA",
+                        "https://example.com/events/1",
+                        "Music",
+                        "ticketmaster"
+                )),
+                "Powered by Ticketmaster",
+                Instant.parse("2026-02-15T00:00:10Z")
+        );
+        store.putLocalHappenings(signal);
+
+        JsonFileSignalStore reloaded = new JsonFileSignalStore(file);
+        Map<String, Object> all = reloaded.getAllSignals();
+        assertEquals(signal, ((Map<String, LocalHappeningsSignal>) all.get("localHappenings")).get(signal.location()));
     }
 
     @Test

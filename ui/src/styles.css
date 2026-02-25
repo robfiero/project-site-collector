@@ -44,6 +44,7 @@ body {
 
 .nav {
   display: flex;
+  align-items: center;
   gap: 0.75rem;
 }
 
@@ -78,6 +79,11 @@ input:focus-visible,
 select:focus-visible {
   outline: 2px solid #1d4ed8;
   outline-offset: 2px;
+}
+
+.signed-in-label-row {
+  text-align: right;
+  margin-top: 0.35rem;
 }
 
 .card {
@@ -239,6 +245,67 @@ select:focus-visible {
 .controls .chips {
   margin-top: 0.35rem;
   gap: 0.4rem;
+}
+
+.news-source-grid {
+  margin-top: 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.45rem;
+}
+
+.news-source-option {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.3rem 0.5rem;
+  align-items: center;
+}
+
+.news-source-option input {
+  margin: 0;
+}
+
+.news-source-option .small {
+  grid-column: 3;
+}
+
+.news-source-option.disabled {
+  opacity: 0.72;
+}
+
+.news-source-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.news-logo-img {
+  display: inline-block;
+  width: auto;
+  max-width: 6rem;
+  height: 1.25rem;
+  object-fit: contain;
+}
+
+.news-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid #d2dae6;
+  background: #f8fafc;
+  color: #1f2937;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.34rem;
+  line-height: 1;
+  min-height: 1.2rem;
+  white-space: nowrap;
 }
 
 .inline-hint {
@@ -429,6 +496,11 @@ select:focus-visible {
 .top-news li {
   margin-bottom: 0.25rem;
   line-height: 1.25;
+}
+
+.top-news {
+  max-height: none;
+  overflow: visible;
 }
 
 .news .card-body,

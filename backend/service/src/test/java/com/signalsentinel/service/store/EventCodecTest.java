@@ -4,6 +4,7 @@ import com.signalsentinel.core.events.AlertRaised;
 import com.signalsentinel.core.events.EnvAqiUpdated;
 import com.signalsentinel.core.events.EnvWeatherUpdated;
 import com.signalsentinel.core.events.Event;
+import com.signalsentinel.core.util.JsonUtils;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -85,5 +86,22 @@ class EventCodecTest {
 
         assertEquals("EnvWeatherUpdated", parsedWeather.type());
         assertEquals("EnvAqiUpdated", parsedAqi.type());
+    }
+
+    @Test
+    void serializedEnvelopeContainsCanonicalTimestampEpochMillisNearNow() throws Exception {
+        Event event = new AlertRaised(Instant.now(), "collector", "probe", Map.of());
+
+        long before = Instant.now().toEpochMilli();
+        String sse = EventCodec.toSseData(event);
+        long after = Instant.now().toEpochMilli();
+
+        var node = JsonUtils.objectMapper().readTree(sse);
+        long timestampEpochMillis = node.path("timestampEpochMillis").asLong(-1);
+        long legacyTimestamp = node.path("timestamp").asLong(-1);
+
+        assertTrue(timestampEpochMillis > 1_700_000_000_000L);
+        assertTrue(timestampEpochMillis >= before - 5_000 && timestampEpochMillis <= after + 5_000);
+        assertEquals(timestampEpochMillis, legacyTimestamp);
     }
 }

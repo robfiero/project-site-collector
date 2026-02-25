@@ -63,10 +63,35 @@ export async function fetchConfigView(): Promise<Record<string, unknown>> {
 export async function fetchEnvironment(zips: string[]): Promise<EnvStatus[]> {
   const query = zips.length > 0 ? `?zips=${encodeURIComponent(zips.join(','))}` : '';
   const response = await fetch(`/api/env${query}`);
-  if (!response.ok) {
+  if (response.ok) {
+    return response.json();
+  }
+  if (zips.length <= 1) {
     throw new Error(`Environment request failed (${response.status})`);
   }
-  return response.json();
+
+  const settled = await Promise.allSettled(
+    zips.map(async (zip) => {
+      const single = await fetch(`/api/env?zips=${encodeURIComponent(zip)}`);
+      if (!single.ok) {
+        throw new Error(`Environment request failed (${single.status}) for ZIP ${zip}`);
+      }
+      const payload = await single.json() as EnvStatus[];
+      return payload;
+    })
+  );
+
+  const merged: EnvStatus[] = [];
+  settled.forEach((result) => {
+    if (result.status === 'fulfilled') {
+      merged.push(...result.value);
+    }
+  });
+
+  if (merged.length === 0) {
+    throw new Error(`Environment request failed (${response.status})`);
+  }
+  return merged;
 }
 
 export interface AuthUserView {
@@ -89,6 +114,11 @@ export interface DevOutboxEmail {
   createdAt: string;
 }
 
+export interface NewsSourceSettingsPayload {
+  availableSources: CatalogDefaults['defaultNewsSources'];
+  effectiveSelectedSources: string[];
+}
+
 async function postJson(path: string, payload: Record<string, unknown>): Promise<Response> {
   return fetch(path, {
     method: 'POST',
@@ -97,10 +127,40 @@ async function postJson(path: string, payload: Record<string, unknown>): Promise
   });
 }
 
+type ApiError = Error & { status?: number };
+
+async function extractErrorMessage(response: Response): Promise<string> {
+  try {
+    const json = await response.clone().json() as { error?: string; message?: string };
+    const candidate = json?.error ?? json?.message;
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  } catch {
+    // fall through to text / fallback
+  }
+  try {
+    const text = (await response.text()).trim();
+    if (text.length > 0) {
+      return text;
+    }
+  } catch {
+    // fallback below
+  }
+  return `Request failed (${response.status})`;
+}
+
+async function throwApiError(response: Response, fallback: string): Promise<never> {
+  const message = await extractErrorMessage(response);
+  const error = new Error(message || fallback) as ApiError;
+  error.status = response.status;
+  throw error;
+}
+
 export async function signup(email: string, password: string): Promise<AuthUserView> {
   const response = await postJson('/api/auth/signup', { email, password });
   if (!response.ok) {
-    throw new Error(`Signup failed (${response.status})`);
+    await throwApiError(response, `Signup failed (${response.status})`);
   }
   return response.json();
 }
@@ -108,7 +168,7 @@ export async function signup(email: string, password: string): Promise<AuthUserV
 export async function login(email: string, password: string): Promise<AuthUserView> {
   const response = await postJson('/api/auth/login', { email, password });
   if (!response.ok) {
-    throw new Error(`Login failed (${response.status})`);
+    await throwApiError(response, `Login failed (${response.status})`);
   }
   return response.json();
 }
@@ -116,21 +176,21 @@ export async function login(email: string, password: string): Promise<AuthUserVi
 export async function logout(): Promise<void> {
   const response = await fetch('/api/auth/logout', { method: 'POST' });
   if (!response.ok) {
-    throw new Error(`Logout failed (${response.status})`);
+    await throwApiError(response, `Logout failed (${response.status})`);
   }
 }
 
 export async function forgotPassword(email: string): Promise<void> {
   const response = await postJson('/api/auth/forgot', { email });
   if (!response.ok) {
-    throw new Error(`Forgot password request failed (${response.status})`);
+    await throwApiError(response, `Forgot password request failed (${response.status})`);
   }
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
   const response = await postJson('/api/auth/reset', { token, newPassword });
   if (!response.ok) {
-    throw new Error(`Password reset failed (${response.status})`);
+    await throwApiError(response, `Password reset failed (${response.status})`);
   }
 }
 
@@ -158,7 +218,7 @@ export async function fetchMe(): Promise<AuthUserView | null> {
 export async function fetchMyPreferences(): Promise<PreferencesPayload> {
   const response = await fetch('/api/me/preferences');
   if (!response.ok) {
-    throw new Error(`Preferences request failed (${response.status})`);
+    await throwApiError(response, `Preferences request failed (${response.status})`);
   }
   return response.json();
 }
@@ -170,7 +230,7 @@ export async function saveMyPreferences(payload: PreferencesPayload): Promise<Pr
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    throw new Error(`Preferences update failed (${response.status})`);
+    await throwApiError(response, `Preferences update failed (${response.status})`);
   }
   return response.json();
 }
@@ -184,4 +244,35 @@ export async function fetchDevOutbox(): Promise<DevOutboxEmail[]> {
     throw new Error(`Dev outbox request failed (${response.status})`);
   }
   return response.json();
+}
+
+export async function fetchNewsSourceSettings(): Promise<NewsSourceSettingsPayload> {
+  const response = await fetch('/api/settings/newsSources');
+  if (!response.ok) {
+    await throwApiError(response, `News source settings request failed (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function saveNewsSourceSettings(selectedSources: string[]): Promise<NewsSourceSettingsPayload> {
+  const response = await fetch('/api/settings/newsSources', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selectedSources })
+  });
+  if (!response.ok) {
+    await throwApiError(response, `News source settings update failed (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function triggerCollectorRefresh(collectors: string[] = ['envCollector', 'rssCollector', 'localEventsCollector']): Promise<void> {
+  const response = await fetch('/api/collectors/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collectors })
+  });
+  if (!response.ok && response.status !== 501) {
+    await throwApiError(response, `Collector refresh failed (${response.status})`);
+  }
 }

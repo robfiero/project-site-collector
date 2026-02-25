@@ -16,6 +16,9 @@ public final class EnvService {
     private final Function<String, Optional<AirNowAqiSnapshot>> aqiLookup;
     private final Clock clock;
     private final List<String> defaultZips;
+    private final boolean airNowConfigured;
+    private final boolean noaaUserAgentPresent;
+    private final boolean noaaFollowRedirects;
 
     public EnvService(
             ZipGeoStore zipGeoStore,
@@ -31,7 +34,10 @@ public final class EnvService {
                 noaaClient::currentFor,
                 airNowClient::currentForZip,
                 clock,
-                defaultZips
+                defaultZips,
+                airNowClient.isConfigured(),
+                noaaClient.hasUserAgentConfigured(),
+                noaaClient.followsRedirects()
         );
     }
 
@@ -43,24 +49,49 @@ public final class EnvService {
             Clock clock,
             List<String> defaultZips
     ) {
+        this(zipGeoStore, zipGeoResolver, weatherLookup, aqiLookup, clock, defaultZips, true, true, true);
+    }
+
+    EnvService(
+            ZipGeoStore zipGeoStore,
+            ZipGeoResolver zipGeoResolver,
+            BiFunction<Double, Double, NoaaWeatherSnapshot> weatherLookup,
+            Function<String, Optional<AirNowAqiSnapshot>> aqiLookup,
+            Clock clock,
+            List<String> defaultZips,
+            boolean airNowConfigured,
+            boolean noaaUserAgentPresent,
+            boolean noaaFollowRedirects
+    ) {
         this.zipGeoStore = zipGeoStore;
         this.zipGeoResolver = zipGeoResolver;
         this.weatherLookup = weatherLookup;
         this.aqiLookup = aqiLookup;
         this.clock = clock;
         this.defaultZips = List.copyOf(defaultZips);
+        this.airNowConfigured = airNowConfigured;
+        this.noaaUserAgentPresent = noaaUserAgentPresent;
+        this.noaaFollowRedirects = noaaFollowRedirects;
     }
 
     public List<EnvStatus> getStatuses(List<String> zips) {
+        return getStatuses(zips, true);
+    }
+
+    public List<EnvStatus> getStatuses(List<String> zips, boolean includeAqi) {
         List<String> effectiveZips = normalizeZipList(zips.isEmpty() ? defaultZips : zips);
         List<EnvStatus> statuses = new ArrayList<>();
         for (String zip : effectiveZips) {
-            statuses.add(resolveStatus(zip));
+            try {
+                statuses.add(resolveStatus(zip, includeAqi));
+            } catch (RuntimeException e) {
+                statuses.add(unavailableStatus(zip, e));
+            }
         }
         return statuses;
     }
 
-    private EnvStatus resolveStatus(String zip) {
+    private EnvStatus resolveStatus(String zip, boolean includeAqi) {
         ZipGeoRecord geo = zipGeoStore.get(zip).orElseGet(() -> {
             ZipGeoRecord resolved = zipGeoResolver.resolve(zip);
             zipGeoStore.put(resolved);
@@ -80,12 +111,16 @@ public final class EnvService {
 
         Optional<AirNowAqiSnapshot> aqiSnapshot = Optional.empty();
         String message = null;
-        try {
-            aqiSnapshot = aqiLookup.apply(zip);
-            if (aqiSnapshot.isEmpty()) {
+        if (includeAqi) {
+            try {
+                aqiSnapshot = aqiLookup.apply(zip);
+                if (aqiSnapshot.isEmpty()) {
+                    message = "AQI unavailable";
+                }
+            } catch (RuntimeException airNowError) {
                 message = "AQI unavailable";
             }
-        } catch (RuntimeException airNowError) {
+        } else {
             message = "AQI unavailable";
         }
 
@@ -113,7 +148,20 @@ public final class EnvService {
             );
         }
 
-        return new EnvStatus(zip, geo.lat(), geo.lon(), weather, aqi, Instant.now(clock));
+        String locationLabel = buildLocationLabel(zip, weatherSnapshot.city(), weatherSnapshot.state());
+        return new EnvStatus(zip, locationLabel, geo.lat(), geo.lon(), weather, aqi, Instant.now(clock));
+    }
+
+    public boolean isAirNowConfigured() {
+        return airNowConfigured;
+    }
+
+    public boolean isNoaaUserAgentPresent() {
+        return noaaUserAgentPresent;
+    }
+
+    public boolean isNoaaFollowRedirects() {
+        return noaaFollowRedirects;
     }
 
     private static List<String> normalizeZipList(List<String> zips) {
@@ -129,5 +177,50 @@ public final class EnvService {
             normalized.add(value);
         }
         return List.copyOf(normalized);
+    }
+
+    private static String buildLocationLabel(String zip, String city, String state) {
+        if (city != null && !city.isBlank() && state != null && !state.isBlank()) {
+            return city + ", " + state + " (" + zip + ")";
+        }
+        return "ZIP " + zip;
+    }
+
+    private EnvStatus unavailableStatus(String zip, RuntimeException error) {
+        Instant now = Instant.now(clock);
+        String message = unavailableMessage(error);
+        return new EnvStatus(
+                zip,
+                "ZIP " + zip,
+                Double.NaN,
+                Double.NaN,
+                new EnvStatus.Weather(
+                        null,
+                        message,
+                        "",
+                        now,
+                        "NOAA",
+                        null,
+                        null
+                ),
+                new EnvStatus.AirQuality(
+                        null,
+                        null,
+                        now,
+                        message,
+                        "AirNow",
+                        null,
+                        null
+                ),
+                now
+        );
+    }
+
+    private static String unavailableMessage(RuntimeException error) {
+        String rootMessage = error.getMessage();
+        if (rootMessage != null && rootMessage.toLowerCase().contains("zip")) {
+            return "Unable to resolve ZIP to location. Try a nearby ZIP code.";
+        }
+        return "Environment data unavailable for this ZIP right now.";
     }
 }
