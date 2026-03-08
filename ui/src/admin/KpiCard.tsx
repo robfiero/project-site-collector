@@ -1,8 +1,10 @@
+import { type ReactNode } from 'react';
+
 type KpiCardProps = {
   icon: string;
   iconTone?: 'health' | 'sse' | 'events' | 'neutral';
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: 'default' | 'success' | 'warn';
 };
 

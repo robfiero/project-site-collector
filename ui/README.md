@@ -64,4 +64,8 @@ Use the top navigation to switch pages.
 - Logged-in users:
   - Settings route enabled
   - Places/watchlist/preferences loaded from and saved to `/api/me/preferences`
+  - appearance preferences (`themeMode`, `accent`) are persisted server-side
+  - Danger Zone supports scoped resets:
+    - `Reset UI preferences` (scope `ui`)
+    - `Reset collector defaults` (scope `collectors`)
   - settings are server-side (not localStorage-driven)

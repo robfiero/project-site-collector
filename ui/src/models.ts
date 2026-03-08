@@ -4,6 +4,7 @@ export type EventType =
   | 'SiteFetched'
   | 'ContentChanged'
   | 'NewsUpdated'
+  | 'NewsItemsIngested'
   | 'WeatherUpdated'
   | 'EnvWeatherUpdated'
   | 'EnvAqiUpdated'
@@ -190,6 +191,47 @@ export interface MarketQuoteSignal {
   price: number;
   change: number;
   updatedAt: string;
+}
+
+export interface MarketsSnapshot {
+  status: 'ok' | 'stale' | 'error' | string;
+  asOf: string;
+  items: MarketQuoteSignal[];
+  error?: string | null;
+  stale?: boolean;
+}
+
+export interface TrendPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface TrendSeries {
+  key: string;
+  points: TrendPoint[];
+}
+
+export interface AdminTrendsSnapshot {
+  windowStart: string;
+  bucketSeconds: number;
+  series: TrendSeries[];
+}
+
+export interface AdminEmailPreview {
+  enabled: boolean;
+  mode: string;
+  lastSentAt: string | null;
+  lastError: string | null;
+  generatedAt: string;
+  subject: string;
+  body: string;
+  includedCounts: {
+    sites: number;
+    newsStories: number;
+    localEvents: number;
+    weather: number;
+    markets: number;
+  };
 }
 
 export interface CollectorStatus {

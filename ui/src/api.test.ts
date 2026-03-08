@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  fetchAdminEmailPreview,
+  fetchAdminTrends,
   fetchDevOutbox,
   fetchEnvironment,
   fetchEvents,
   fetchHealth,
+  fetchMarkets,
   fetchMe,
   fetchMetrics,
   fetchMyPreferences,
@@ -11,6 +14,7 @@ import {
   fetchSignals,
   login,
   logout,
+  resetSettings,
   resetPassword,
   signup,
   triggerCollectorRefresh
@@ -90,6 +94,29 @@ describe('fetchEvents', () => {
   });
 });
 
+describe('fetchMarkets', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('requests symbols query and returns parsed payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: 'ok', asOf: '2026-02-25T18:00:00Z', items: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    await expect(fetchMarkets(['AAPL', 'MSFT'])).resolves.toMatchObject({ status: 'ok', items: [] });
+    expect(fetchMock).toHaveBeenCalledWith('/api/markets?symbols=AAPL%2CMSFT');
+  });
+
+  it('throws on non-ok response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 502 }));
+    await expect(fetchMarkets(['AAPL'])).rejects.toThrow('Markets request failed (502)');
+  });
+});
+
 describe('fetchDevOutbox', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -103,6 +130,31 @@ describe('fetchDevOutbox', () => {
   it('throws on non-404 failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 500 }));
     await expect(fetchDevOutbox()).rejects.toThrow('Dev outbox request failed (500)');
+  });
+});
+
+describe('admin endpoints', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('fetchAdminTrends returns parsed payload', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        windowStart: '2026-02-25T20:00:00Z',
+        bucketSeconds: 300,
+        series: []
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+    await expect(fetchAdminTrends()).resolves.toMatchObject({ bucketSeconds: 300, series: [] });
+  });
+
+  it('fetchAdminEmailPreview throws on non-ok', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 500 }));
+    await expect(fetchAdminEmailPreview()).rejects.toThrow('Admin email preview request failed (500)');
   });
 });
 
@@ -142,6 +194,52 @@ describe('triggerCollectorRefresh', () => {
     } catch (error) {
       const err = error as Error & { status?: number };
       expect(err.message).toBe('bad refresh');
+      expect(err.status).toBe(400);
+    }
+  });
+});
+
+describe('resetSettings', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('posts scope and returns parsed payload', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        scopeApplied: 'collectors',
+        preferences: { zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn'], themeMode: 'dark', accent: 'default' }
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    await expect(resetSettings('collectors')).resolves.toMatchObject({
+      scopeApplied: 'collectors',
+      preferences: { zipCodes: ['02108'] }
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'collectors' })
+    });
+  });
+
+  it('throws ApiError with status on failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'scope must be one of: ui, collectors, all' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    try {
+      await resetSettings('ui');
+      throw new Error('expected throw');
+    } catch (error) {
+      const err = error as Error & { status?: number };
+      expect(err.message).toContain('scope must be one of');
       expect(err.status).toBe(400);
     }
   });

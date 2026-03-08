@@ -8,6 +8,7 @@ import com.signalsentinel.collectors.support.FixtureUtils;
 import com.signalsentinel.collectors.support.InMemorySignalStore;
 import com.signalsentinel.core.bus.EventBus;
 import com.signalsentinel.core.events.AlertRaised;
+import com.signalsentinel.core.events.NewsItemsIngested;
 import com.signalsentinel.core.events.NewsUpdated;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -24,10 +25,12 @@ import java.nio.file.Files;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,7 +50,7 @@ class RssNewsCollectorTest {
     void parsesRssFixtureAndRaisesKeywordAlert() throws Exception {
         String rss = Files.readString(FixtureUtils.fixturePath("fixtures/sample-rss.xml"), StandardCharsets.UTF_8);
 
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/rss", exchange -> writeResponse(exchange, rss));
         server.start();
 
@@ -79,6 +82,7 @@ class RssNewsCollectorTest {
         assertTrue(store.getNews("local-news").isPresent());
         assertEquals(3, store.getNews("local-news").get().stories().size());
         assertEquals(1, capture.byType(NewsUpdated.class).size());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
         assertEquals(1, capture.byType(AlertRaised.class).size());
     }
 
@@ -157,7 +161,7 @@ class RssNewsCollectorTest {
         String goodRss = Files.readString(FixtureUtils.fixturePath("fixtures/sample-rss.xml"), StandardCharsets.UTF_8);
         String badXml = "<rss><channel><item><title>broken";
 
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/good", exchange -> writeResponse(exchange, goodRss));
         server.createContext("/bad", exchange -> writeResponse(exchange, badXml));
         server.start();
@@ -196,6 +200,7 @@ class RssNewsCollectorTest {
         assertEquals(1L, result.stats().get("successes"));
         assertEquals(1L, result.stats().get("failures"));
         assertEquals(1, capture.byType(NewsUpdated.class).size());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
 
         List<AlertRaised> alerts = capture.byType(AlertRaised.class);
         assertEquals(1, alerts.size());
@@ -222,6 +227,7 @@ class RssNewsCollectorTest {
         EventBus bus = new EventBus((event, error) -> {
             throw new AssertionError("Unexpected handler error", error);
         });
+        EventCapture capture = new EventCapture(bus);
         InMemorySignalStore store = new InMemorySignalStore();
         CollectorContext ctx = new CollectorContext(
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build(),
@@ -241,7 +247,7 @@ class RssNewsCollectorTest {
 
     @Test
     void allSourcesFailReturnsUnsuccessfulResult() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/bad", exchange -> writeResponse(exchange, "<rss><channel><item><title>broken"));
         server.start();
 
@@ -276,7 +282,7 @@ class RssNewsCollectorTest {
 
     @Test
     void accessDeniedStatusRaisesAlertAndSkipsStore() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/forbidden", exchange -> writeResponse(exchange, 403, "<html>forbidden</html>", Map.of("Content-Type", "text/html")));
         server.start();
 
@@ -306,6 +312,7 @@ class RssNewsCollectorTest {
         assertEquals(0L, result.stats().get("successes"));
         assertEquals(1L, result.stats().get("failures"));
         assertTrue(store.getNews("forbidden-source").isEmpty());
+        assertEquals(0, capture.byType(NewsItemsIngested.class).size());
 
         List<AlertRaised> alerts = capture.byType(AlertRaised.class);
         assertEquals(1, alerts.size());
@@ -315,7 +322,7 @@ class RssNewsCollectorTest {
 
     @Test
     void serverErrorStatusCountsFailure() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/server-error", exchange -> writeResponse(exchange, 500, "{\"error\":\"boom\"}", Map.of("Content-Type", "application/json")));
         server.start();
 
@@ -329,6 +336,7 @@ class RssNewsCollectorTest {
         EventBus bus = new EventBus((event, error) -> {
             throw new AssertionError("Unexpected handler error", error);
         });
+        EventCapture capture = new EventCapture(bus);
         InMemorySignalStore store = new InMemorySignalStore();
         CollectorContext ctx = new CollectorContext(
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build(),
@@ -349,7 +357,7 @@ class RssNewsCollectorTest {
     @Test
     void missingContentTypeStillParsesIfBodyIsXml() throws Exception {
         String rss = Files.readString(FixtureUtils.fixturePath("fixtures/sample-rss.xml"), StandardCharsets.UTF_8);
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/rss-no-content-type", exchange -> writeResponse(exchange, 200, rss, Map.of()));
         server.start();
 
@@ -378,12 +386,13 @@ class RssNewsCollectorTest {
         assertTrue(result.success());
         assertTrue(store.getNews("rss-no-content-type").isPresent());
         assertEquals(1, capture.byType(NewsUpdated.class).size());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
         assertEquals(0, capture.byType(AlertRaised.class).size());
     }
 
     @Test
     void contentTypeTextHtmlBodyResultsInDeterministicOutcome() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/html", exchange -> writeResponse(exchange, 200, "<html>not rss</html>", Map.of("Content-Type", "text/html")));
         server.start();
 
@@ -413,12 +422,13 @@ class RssNewsCollectorTest {
         assertTrue(store.getNews("html-source").isPresent());
         assertEquals(0, store.getNews("html-source").orElseThrow().stories().size());
         assertEquals(1, capture.byType(NewsUpdated.class).size());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
         assertEquals(0, capture.byType(AlertRaised.class).size());
     }
 
     @Test
     void emptyBodyIsInvalidXml() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/empty", exchange -> writeResponse(exchange, 200, "", Map.of("Content-Type", "application/rss+xml")));
         server.start();
 
@@ -447,12 +457,13 @@ class RssNewsCollectorTest {
         assertFalse(result.success());
         assertTrue(store.getNews("empty-source").isEmpty());
         assertEquals(1, capture.byType(AlertRaised.class).size());
+        assertEquals(0, capture.byType(NewsItemsIngested.class).size());
     }
 
     @Test
     void redirectResponseIsFollowedAndStored() throws Exception {
         String rss = Files.readString(FixtureUtils.fixturePath("fixtures/sample-rss.xml"), StandardCharsets.UTF_8);
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/redirect", exchange -> writeResponse(exchange, 302, "", Map.of("Location", "/rss")));
         server.createContext("/rss", exchange -> writeResponse(exchange, 200, rss, Map.of("Content-Type", "application/rss+xml")));
         server.start();
@@ -467,6 +478,7 @@ class RssNewsCollectorTest {
         EventBus bus = new EventBus((event, error) -> {
             throw new AssertionError("Unexpected handler error", error);
         });
+        EventCapture capture = new EventCapture(bus);
         InMemorySignalStore store = new InMemorySignalStore();
         CollectorContext ctx = new CollectorContext(
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build(),
@@ -485,7 +497,7 @@ class RssNewsCollectorTest {
     @Test
     void keywordAlertNotRaisedWhenNoKeywordsMatch() throws Exception {
         String rss = Files.readString(FixtureUtils.fixturePath("fixtures/sample-rss.xml"), StandardCharsets.UTF_8);
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/rss", exchange -> writeResponse(exchange, 200, rss, Map.of("Content-Type", "application/rss+xml")));
         server.start();
 
@@ -513,7 +525,110 @@ class RssNewsCollectorTest {
         var result = new RssNewsCollector().poll(ctx).join();
         assertTrue(result.success());
         assertEquals(1, capture.byType(NewsUpdated.class).size());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
         assertEquals(0, capture.byType(AlertRaised.class).size());
+    }
+
+    @Test
+    void nyt429WithRetryAfterEntersCooldownAndSkipsImmediateRetry() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/nyt", exchange -> {
+            requests.incrementAndGet();
+            writeResponse(exchange, 429, "{\"error\":\"rate limited\"}", Map.of("Retry-After", "120"));
+        });
+        server.start();
+
+        RssCollectorConfig cfg = new RssCollectorConfig(
+                Duration.ofSeconds(60),
+                5,
+                List.of(),
+                List.of(new RssSourceConfig("nyt", "http://localhost:" + server.getAddress().getPort() + "/nyt"))
+        );
+
+        EventBus bus = new EventBus((event, error) -> {
+            throw new AssertionError("Unexpected handler error", error);
+        });
+        EventCapture capture = new EventCapture(bus);
+        InMemorySignalStore store = new InMemorySignalStore();
+        MutableClock clock = new MutableClock(Instant.parse("2026-02-25T20:00:00Z"));
+        CollectorContext ctx = new CollectorContext(
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build(),
+                bus,
+                store,
+                clock,
+                Duration.ofSeconds(1),
+                Map.of(RssNewsCollector.CONFIG_KEY, cfg)
+        );
+
+        RssNewsCollector collector = new RssNewsCollector(Duration.ofSeconds(60), key -> "test-nyt-key");
+        var first = collector.poll(ctx).join();
+        assertFalse(first.success());
+        assertEquals(1, requests.get());
+        assertEquals(0, capture.byType(NewsItemsIngested.class).size());
+
+        var second = collector.poll(ctx).join();
+        assertFalse(second.success());
+        assertEquals(1, requests.get(), "collector should not call upstream again during Retry-After cooldown");
+        assertEquals(0, capture.byType(NewsItemsIngested.class).size());
+    }
+
+    @Test
+    void nyt429WithoutRetryAfterUsesExponentialBackoffAndServesCachedSignal() throws Exception {
+        String successBody = """
+                {"results":[
+                    {"title":"Story A","url":"https://example.com/a","published_date":"2026-02-25T20:00:00Z"}
+                ]}
+                """;
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/nyt", exchange -> {
+            if (requests.getAndIncrement() == 0) {
+                writeResponse(exchange, 200, successBody, Map.of("Content-Type", "application/json"));
+            } else {
+                writeResponse(exchange, 429, "{\"error\":\"rate limited\"}", Map.of("Content-Type", "application/json"));
+            }
+        });
+        server.start();
+
+        RssCollectorConfig cfg = new RssCollectorConfig(
+                Duration.ofSeconds(60),
+                5,
+                List.of(),
+                List.of(new RssSourceConfig("nyt", "http://localhost:" + server.getAddress().getPort() + "/nyt"))
+        );
+
+        EventBus bus = new EventBus((event, error) -> {
+            throw new AssertionError("Unexpected handler error", error);
+        });
+        EventCapture capture = new EventCapture(bus);
+        InMemorySignalStore store = new InMemorySignalStore();
+        MutableClock clock = new MutableClock(Instant.parse("2026-02-25T20:00:00Z"));
+        CollectorContext ctx = new CollectorContext(
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build(),
+                bus,
+                store,
+                clock,
+                Duration.ofSeconds(1),
+                Map.of(RssNewsCollector.CONFIG_KEY, cfg)
+        );
+
+        RssNewsCollector collector = new RssNewsCollector(Duration.ofSeconds(60), key -> "test-nyt-key");
+        var first = collector.poll(ctx).join();
+        assertTrue(first.success());
+        assertEquals(1, requests.get());
+        assertTrue(store.getNews("nyt").isPresent());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
+
+        var second = collector.poll(ctx).join();
+        assertTrue(second.success(), "collector should serve cached NYT signal while rate-limited");
+        assertEquals(2, requests.get());
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size(), "cached fallback should not publish new ingest events");
+
+        var third = collector.poll(ctx).join();
+        assertTrue(third.success());
+        assertEquals(2, requests.get(), "collector should skip repeated calls during exponential cooldown");
+        assertEquals(1, capture.byType(NewsItemsIngested.class).size());
     }
 
     private static void writeResponse(HttpExchange exchange, String body) throws IOException {
@@ -528,6 +643,29 @@ class RssNewsCollectorTest {
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(bytes);
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant now;
+
+        private MutableClock(Instant now) {
+            this.now = now;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
         }
     }
 }

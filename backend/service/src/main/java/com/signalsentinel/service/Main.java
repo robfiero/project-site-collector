@@ -32,6 +32,7 @@ import com.signalsentinel.service.env.NoaaClient;
 import com.signalsentinel.service.env.TigerwebZipResolver;
 import com.signalsentinel.service.env.ZipGeoStore;
 import com.signalsentinel.service.http.HttpClientFactory;
+import com.signalsentinel.service.market.MarketDataService;
 import com.signalsentinel.service.runtime.SchedulerService;
 import com.signalsentinel.service.store.EventCodec;
 import com.signalsentinel.service.store.JsonFileSignalStore;
@@ -204,6 +205,13 @@ public final class Main {
                 intervalFor(collectorConfigByName, "envCollector", Duration.ofSeconds(300))
         );
         registerScheduledCollector(scheduledCollectors, collectorConfigByName, "envCollector", envCollector, context, true);
+        MarketDataService marketDataService = new MarketDataService(
+                sharedHttpClient,
+                System.getenv().getOrDefault("MARKETS_BASE_URL", "https://query1.finance.yahoo.com/v7/finance/quote"),
+                Duration.ofSeconds(5),
+                Clock.systemUTC(),
+                Duration.ofMinutes(15)
+        );
 
         List<Collector> collectors = ticketmasterConfig == null
                 ? List.of(siteCollector, rssCollector, envCollector)
@@ -219,6 +227,7 @@ public final class Main {
                 configView,
                 authService,
                 envService,
+                marketDataService,
                 !devMode,
                 devOutboxEnabled,
                 devOutbox

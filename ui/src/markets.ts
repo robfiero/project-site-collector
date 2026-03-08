@@ -20,3 +20,8 @@ export function formatMarketSymbolLabel(symbol: string): string {
   }
   return `${normalized} - ${company}`;
 }
+
+export function companyNameForSymbol(symbol: string): string {
+  const normalized = symbol.trim().toUpperCase();
+  return SYMBOL_LABELS[normalized] ?? normalized;
+}

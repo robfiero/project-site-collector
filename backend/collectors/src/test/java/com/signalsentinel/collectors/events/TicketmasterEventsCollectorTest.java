@@ -47,7 +47,7 @@ class TicketmasterEventsCollectorTest {
     @Test
     void testPollIteratesEffectiveZipList_andCallsApiPerZip() throws Exception {
         List<URI> requests = new CopyOnWriteArrayList<>();
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/custom-base/events.json", exchange -> {
             requests.add(exchange.getRequestURI());
@@ -88,7 +88,7 @@ class TicketmasterEventsCollectorTest {
 
     @Test
     void testWritesOneSignalPerZip_withExpectedNormalizedFields() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> {
             String zip = queryParams(exchange.getRequestURI()).get("postalCode");
@@ -127,7 +127,7 @@ class TicketmasterEventsCollectorTest {
 
     @Test
     void testDedupeByEventIdWithinZip() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> writeResponse(exchange, 200, twoEventsJson("02108", true, false)));
         server.start();
@@ -156,7 +156,7 @@ class TicketmasterEventsCollectorTest {
 
     @Test
     void testOneZipFailureDoesNotPreventOtherZipSuccess_andWritesEmptySignalForFailedZip() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> {
             String zip = queryParams(exchange.getRequestURI()).get("postalCode");
@@ -193,7 +193,7 @@ class TicketmasterEventsCollectorTest {
     @Test
     void testAuthFailureShortCircuits() throws Exception {
         List<URI> requests = new CopyOnWriteArrayList<>();
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> {
             requests.add(exchange.getRequestURI());
@@ -257,7 +257,7 @@ class TicketmasterEventsCollectorTest {
 
     @Test
     void emptyEventsWritesEmptySignalPerZip() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> writeResponse(exchange, 200, emptyEventsJson()));
         server.start();
@@ -286,7 +286,7 @@ class TicketmasterEventsCollectorTest {
 
     @Test
     void missingEmbeddedVenuesOrFieldsIsHandled() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> writeResponse(exchange, 200, missingVenueFieldsJson()));
         server.start();
@@ -320,7 +320,7 @@ class TicketmasterEventsCollectorTest {
     @Test
     void classificationFilteringBranch_includesParamWhenConfigured_andIncludesAllItems() throws Exception {
         List<URI> requests = new CopyOnWriteArrayList<>();
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> {
             requests.add(exchange.getRequestURI());
@@ -373,7 +373,7 @@ class TicketmasterEventsCollectorTest {
 
     @Test
     void rateLimitStatusOnOneZipDoesNotBlockOtherZip() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> {
             String zip = queryParams(exchange.getRequestURI()).get("postalCode");

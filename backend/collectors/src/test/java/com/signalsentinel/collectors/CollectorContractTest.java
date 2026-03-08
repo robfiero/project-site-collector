@@ -50,7 +50,7 @@ class CollectorContractTest {
 
     @Test
     void siteCollectorSatisfiesContractOnPartialFailure() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         int port = server.getAddress().getPort();
 
@@ -94,7 +94,7 @@ class CollectorContractTest {
         String goodRss = Files.readString(FixtureUtils.fixturePath("fixtures/sample-rss.xml"), StandardCharsets.UTF_8);
         String badXml = "<rss><channel><item><title>broken";
 
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/good", exchange -> writeResponse(exchange, 200, goodRss));
         server.createContext("/bad", exchange -> writeResponse(exchange, 200, badXml));
         server.start();

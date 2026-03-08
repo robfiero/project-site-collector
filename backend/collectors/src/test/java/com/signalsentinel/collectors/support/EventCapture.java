@@ -17,6 +17,7 @@ public class EventCapture {
         bus.subscribe(com.signalsentinel.core.events.SiteFetched.class, events::add);
         bus.subscribe(com.signalsentinel.core.events.ContentChanged.class, events::add);
         bus.subscribe(com.signalsentinel.core.events.NewsUpdated.class, events::add);
+        bus.subscribe(com.signalsentinel.core.events.NewsItemsIngested.class, events::add);
         bus.subscribe(com.signalsentinel.core.events.WeatherUpdated.class, events::add);
         bus.subscribe(com.signalsentinel.core.events.AlertRaised.class, events::add);
     }

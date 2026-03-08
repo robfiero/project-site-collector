@@ -1,4 +1,13 @@
-import type { CatalogDefaults, CollectorStatus, EnvStatus, MetricsResponse, SignalsSnapshot } from './models';
+import type {
+  AdminEmailPreview,
+  AdminTrendsSnapshot,
+  CatalogDefaults,
+  CollectorStatus,
+  EnvStatus,
+  MarketsSnapshot,
+  MetricsResponse,
+  SignalsSnapshot
+} from './models';
 
 export interface HealthResponse {
   status: string;
@@ -32,6 +41,15 @@ export async function fetchMetrics(): Promise<MetricsResponse> {
   const response = await fetch('/api/metrics');
   if (!response.ok) {
     throw new Error(`Metrics request failed (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function fetchMarkets(symbols: string[]): Promise<MarketsSnapshot> {
+  const query = symbols.length > 0 ? `?symbols=${encodeURIComponent(symbols.join(','))}` : '';
+  const response = await fetch(`/api/markets${query}`);
+  if (!response.ok) {
+    throw new Error(`Markets request failed (${response.status})`);
   }
   return response.json();
 }
@@ -104,6 +122,8 @@ export interface PreferencesPayload {
   zipCodes: string[];
   watchlist: string[];
   newsSourceIds: string[];
+  themeMode: 'light' | 'dark';
+  accent: 'default' | 'gold' | 'blue' | 'green';
 }
 
 export interface DevOutboxEmail {
@@ -117,6 +137,13 @@ export interface DevOutboxEmail {
 export interface NewsSourceSettingsPayload {
   availableSources: CatalogDefaults['defaultNewsSources'];
   effectiveSelectedSources: string[];
+}
+
+export type SettingsResetScope = 'ui' | 'collectors' | 'all';
+
+export interface SettingsResetResponse {
+  scopeApplied: SettingsResetScope;
+  preferences: PreferencesPayload;
 }
 
 async function postJson(path: string, payload: Record<string, unknown>): Promise<Response> {
@@ -246,6 +273,22 @@ export async function fetchDevOutbox(): Promise<DevOutboxEmail[]> {
   return response.json();
 }
 
+export async function fetchAdminTrends(): Promise<AdminTrendsSnapshot> {
+  const response = await fetch('/api/admin/trends');
+  if (!response.ok) {
+    throw new Error(`Admin trends request failed (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function fetchAdminEmailPreview(): Promise<AdminEmailPreview> {
+  const response = await fetch('/api/admin/email/preview');
+  if (!response.ok) {
+    throw new Error(`Admin email preview request failed (${response.status})`);
+  }
+  return response.json();
+}
+
 export async function fetchNewsSourceSettings(): Promise<NewsSourceSettingsPayload> {
   const response = await fetch('/api/settings/newsSources');
   if (!response.ok) {
@@ -262,6 +305,18 @@ export async function saveNewsSourceSettings(selectedSources: string[]): Promise
   });
   if (!response.ok) {
     await throwApiError(response, `News source settings update failed (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function resetSettings(scope: SettingsResetScope): Promise<SettingsResetResponse> {
+  const response = await fetch('/api/settings/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope })
+  });
+  if (!response.ok) {
+    await throwApiError(response, `Settings reset failed (${response.status})`);
   }
   return response.json();
 }

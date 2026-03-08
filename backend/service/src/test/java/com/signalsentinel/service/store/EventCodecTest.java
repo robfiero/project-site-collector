@@ -31,7 +31,7 @@ class EventCodecTest {
         assertEquals("AlertRaised", parsed.type());
         assertTrue(line.contains("\"type\":\"AlertRaised\""));
         assertTrue(sseData.contains("\"type\":\"AlertRaised\""));
-        assertEquals(15, EventCodec.allEventTypes().size());
+        assertEquals(17, EventCodec.allEventTypes().size());
     }
 
     @Test

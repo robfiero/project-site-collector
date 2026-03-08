@@ -2,6 +2,10 @@ package com.signalsentinel.service.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.signalsentinel.core.bus.EventBus;
+import com.signalsentinel.core.events.CollectorTickCompleted;
+import com.signalsentinel.core.events.LocalHappeningsIngested;
+import com.signalsentinel.core.events.NewsItemsIngested;
+import com.signalsentinel.core.events.NewsUpdated;
 import com.signalsentinel.core.model.HappeningItem;
 import com.signalsentinel.core.model.LocalHappeningsSignal;
 import com.signalsentinel.core.util.HashingUtils;
@@ -36,6 +40,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -187,7 +192,9 @@ class AuthApiIntegrationTest {
                                 "userId", "ignored",
                                 "zipCodes", List.of("02108", "98101"),
                                 "watchlist", List.of("AAPL"),
-                                "newsSourceIds", List.of("world")
+                                "newsSourceIds", List.of("world"),
+                                "themeMode", "dark",
+                                "accent", "default"
                         ))))
                         .header("Content-Type", "application/json")
                         .build(),
@@ -222,6 +229,37 @@ class AuthApiIntegrationTest {
 
         assertEquals(401, response.statusCode());
         assertTrue(response.body().contains("unauthorized"));
+    }
+
+    @Test
+    void preferencesInvalidThemeOrAccentFallsBackToDefaults() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "prefs-theme@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        HttpResponse<String> put = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of(
+                                "zipCodes", List.of("02108"),
+                                "watchlist", List.of("AAPL"),
+                                "newsSourceIds", List.of("cnn"),
+                                "themeMode", "solarized",
+                                "accent", "orange"
+                        ))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, put.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(put.body());
+        assertEquals("dark", body.get("themeMode").asText());
+        assertEquals("default", body.get("accent").asText());
     }
 
     @Test
@@ -264,6 +302,157 @@ class AuthApiIntegrationTest {
                 HttpResponse.BodyHandlers.ofString()
         ));
         assertTrue(exception.getMessage().contains("header parser received no bytes"));
+    }
+
+    @Test
+    void settingsResetUiScopeKeepsCollectorPreferencesUnchanged() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "reset-ui@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        HttpResponse<String> seeded = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of(
+                                "zipCodes", List.of("60601"),
+                                "watchlist", List.of("TSLA"),
+                                "newsSourceIds", List.of("wsj"),
+                                "themeMode", "light",
+                                "accent", "gold"
+                        ))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, seeded.statusCode());
+
+        HttpResponse<String> reset = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/settings/reset"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of("scope", "ui"))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, reset.statusCode());
+        JsonNode resetBody = JsonUtils.objectMapper().readTree(reset.body());
+        assertEquals("ui", resetBody.get("scopeApplied").asText());
+        assertEquals("60601", resetBody.get("preferences").get("zipCodes").get(0).asText());
+        assertEquals("TSLA", resetBody.get("preferences").get("watchlist").get(0).asText());
+        assertEquals("wsj", resetBody.get("preferences").get("newsSourceIds").get(0).asText());
+        assertEquals("dark", resetBody.get("preferences").get("themeMode").asText());
+        assertEquals("default", resetBody.get("preferences").get("accent").asText());
+    }
+
+    @Test
+    void settingsResetCollectorsScopeRestoresCatalogDefaultPreferences() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "reset-collectors@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of(
+                                "zipCodes", List.of("60601"),
+                                "watchlist", List.of("TSLA"),
+                                "newsSourceIds", List.of("wsj"),
+                                "themeMode", "light",
+                                "accent", "gold"
+                        ))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        HttpResponse<String> reset = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/settings/reset"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of("scope", "collectors"))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, reset.statusCode());
+        JsonNode resetBody = JsonUtils.objectMapper().readTree(reset.body());
+        assertEquals("collectors", resetBody.get("scopeApplied").asText());
+        assertEquals(List.of("02108", "98101"),
+                JsonUtils.objectMapper().convertValue(resetBody.get("preferences").get("zipCodes"), List.class));
+        assertEquals(List.of("AAPL", "MSFT", "SPY", "BTC-USD", "ETH-USD"),
+                JsonUtils.objectMapper().convertValue(resetBody.get("preferences").get("watchlist"), List.class));
+        assertEquals(List.of("cnn"),
+                JsonUtils.objectMapper().convertValue(resetBody.get("preferences").get("newsSourceIds"), List.class));
+        assertEquals("light", resetBody.get("preferences").get("themeMode").asText());
+        assertEquals("gold", resetBody.get("preferences").get("accent").asText());
+    }
+
+    @Test
+    void settingsResetAllScopeMatchesCollectorsScopeBehavior() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "reset-all@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of(
+                                "zipCodes", List.of("60601"),
+                                "watchlist", List.of("TSLA"),
+                                "newsSourceIds", List.of("wsj"),
+                                "themeMode", "light",
+                                "accent", "gold"
+                        ))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        HttpResponse<String> reset = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/settings/reset"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of("scope", "all"))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, reset.statusCode());
+        JsonNode resetBody = JsonUtils.objectMapper().readTree(reset.body());
+        assertEquals("all", resetBody.get("scopeApplied").asText());
+        assertTrue(resetBody.get("preferences").get("zipCodes").isArray());
+        assertEquals("02108", resetBody.get("preferences").get("zipCodes").get(0).asText());
+        assertEquals("dark", resetBody.get("preferences").get("themeMode").asText());
+        assertEquals("default", resetBody.get("preferences").get("accent").asText());
+    }
+
+    @Test
+    void settingsResetRejectsInvalidScopeWith400() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "reset-invalid@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/settings/reset"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of("scope", "oops"))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("scope must be one of"));
+        assertFalse(response.body().contains("Exception"));
     }
 
     @Test
@@ -436,7 +625,188 @@ class AuthApiIntegrationTest {
         assertTrue(!anonBody.get("localHappenings").has("32830"));
     }
 
+    @Test
+    void adminTrendsRequiresAuthenticationAndReturnsSnapshotWhenAuthenticated() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> anonymous = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/trends")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(401, anonymous.statusCode());
+
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "admin-trends@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        Instant ts = Instant.now();
+        runtime.eventBus().publish(new CollectorTickCompleted(ts, "rssCollector", true, 25));
+        runtime.eventBus().publish(new NewsUpdated(ts, "cnn", 3));
+        runtime.eventBus().publish(new NewsItemsIngested(ts, "cnn", 3));
+        runtime.eventBus().publish(new LocalHappeningsIngested(ts, "02108", "ticketmaster", 2));
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/trends"))
+                        .header("Cookie", cookie)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, response.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(response.body());
+        assertTrue(body.has("windowStart"));
+        assertTrue(body.has("asOf"));
+        assertEquals(300, body.get("bucketSeconds").asInt());
+        assertTrue(body.get("series").isArray());
+        assertTrue(body.get("series").toString().contains("collector.runs.rssCollector.success"));
+        assertTrue(body.get("series").toString().contains("ingested.news.cnn"));
+        assertTrue(body.get("series").toString().contains("ingested.localEvents."));
+    }
+
+    @Test
+    void adminEndpointsReturnAuthDisabledWhenAuthFeatureOff() throws Exception {
+        TestRuntime runtime = startRuntime(true, false);
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> trends = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/trends")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(404, trends.statusCode());
+        assertTrue(trends.body().contains("auth_disabled"));
+
+        HttpResponse<String> preview = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/email/preview")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(404, preview.statusCode());
+        assertTrue(preview.body().contains("auth_disabled"));
+    }
+
+    @Test
+    void adminEmailPreviewReturnsDeterministicIncludedCountsForEffectivePrefs() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        runtime.signalStore().putNews(new com.signalsentinel.core.model.NewsSignal(
+                "cnn",
+                List.of(
+                        new com.signalsentinel.core.model.NewsStory("CNN A", "https://example.com/a", Instant.parse("2026-02-25T10:00:00Z"), "cnn"),
+                        new com.signalsentinel.core.model.NewsStory("CNN B", "https://example.com/b", Instant.parse("2026-02-25T11:00:00Z"), "cnn")
+                ),
+                Instant.parse("2026-02-25T12:00:00Z")
+        ));
+        runtime.signalStore().putNews(new com.signalsentinel.core.model.NewsSignal(
+                "abc",
+                List.of(new com.signalsentinel.core.model.NewsStory("ABC A", "https://example.com/c", Instant.parse("2026-02-25T10:00:00Z"), "abc")),
+                Instant.parse("2026-02-25T12:00:00Z")
+        ));
+        runtime.signalStore().putLocalHappenings(new LocalHappeningsSignal(
+                "02108",
+                List.of(
+                        new HappeningItem("evt-1", "Concert", "2026-03-01T20:00:00Z", "Venue", "Boston", "MA", "https://example.com/1", "Music", "ticketmaster"),
+                        new HappeningItem("evt-2", "Show", "2026-03-02T20:00:00Z", "Venue", "Boston", "MA", "https://example.com/2", "Arts", "ticketmaster")
+                ),
+                "Powered by Ticketmaster",
+                Instant.parse("2026-02-25T12:00:00Z")
+        ));
+        runtime.signalStore().putLocalHappenings(new LocalHappeningsSignal(
+                "98101",
+                List.of(new HappeningItem("evt-3", "Game", "2026-03-03T20:00:00Z", "Arena", "Seattle", "WA", "https://example.com/3", "Sports", "ticketmaster")),
+                "Powered by Ticketmaster",
+                Instant.parse("2026-02-25T12:00:00Z")
+        ));
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "admin-preview@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
+                        .header("Cookie", cookie)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of(
+                                "zipCodes", List.of("98101"),
+                                "watchlist", List.of("AAPL"),
+                                "newsSourceIds", List.of("cnn"),
+                                "themeMode", "dark",
+                                "accent", "default"
+                        ))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/email/preview"))
+                        .header("Cookie", cookie)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, response.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(response.body());
+        assertEquals("dev_outbox", body.get("mode").asText());
+        assertEquals(2, body.get("includedCounts").get("newsStories").asInt());
+        assertEquals(1, body.get("includedCounts").get("localEvents").asInt());
+        assertTrue(body.get("subject").asText().contains("Signal Sentinel Digest Preview"));
+        assertTrue(body.get("body").asText().contains("News stories included: 2"));
+        assertEquals("", body.get("lastSentAt").asText());
+        assertEquals("", body.get("lastError").asText());
+    }
+
+    @Test
+    void adminEmailPreviewReturns401WhenUnauthenticated() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/email/preview")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(401, response.statusCode());
+        assertTrue(response.body().contains("unauthorized"));
+    }
+
+    @Test
+    void adminEmailPreviewEmptyStoresReturnsZeroCountsAndNoNullFields() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "admin-preview-empty@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        String cookie = cookieFrom(signup);
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/admin/email/preview"))
+                        .header("Cookie", cookie)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, response.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(response.body());
+        assertEquals(0, body.get("includedCounts").get("sites").asInt());
+        assertEquals(0, body.get("includedCounts").get("newsStories").asInt());
+        assertEquals(0, body.get("includedCounts").get("localEvents").asInt());
+        assertEquals(0, body.get("includedCounts").get("weather").asInt());
+        assertEquals(0, body.get("includedCounts").get("markets").asInt());
+        assertEquals("", body.get("body").asText());
+        assertEquals("", body.get("lastSentAt").asText());
+        assertEquals("", body.get("lastError").asText());
+    }
+
     private TestRuntime startRuntime(boolean devOutboxEnabled) throws Exception {
+        return startRuntime(devOutboxEnabled, true);
+    }
+
+    private TestRuntime startRuntime(boolean devOutboxEnabled, boolean authEnabled) throws Exception {
         Path tempDir = Files.createTempDirectory("signal-sentinel-auth-it-");
         JsonFileSignalStore signalStore = new JsonFileSignalStore(tempDir.resolve("state/signals.json"));
         JsonlEventStore eventStore = new JsonlEventStore(tempDir.resolve("logs/events.jsonl"));
@@ -450,28 +820,32 @@ class AuthApiIntegrationTest {
         PreferencesStore preferencesStore = new PreferencesStore(tempDir.resolve("data/preferences.json"));
         PasswordResetStore passwordResetStore = new PasswordResetStore(tempDir.resolve("data/password_resets.json"));
         DevOutboxEmailSender devOutbox = new DevOutboxEmailSender(tempDir.resolve("data/outbox.json"));
-        AuthService authService = new AuthService(
-                userStore,
-                preferencesStore,
-                passwordResetStore,
-                new TestPasswordHasher(),
-                new JwtService("test-secret", clock, Duration.ofHours(8)),
-                new ResetTokenService(),
-                devOutbox,
-                eventBus,
-                clock,
-                "http://localhost:5173"
-        );
+        AuthService authService = authEnabled
+                ? new AuthService(
+                        userStore,
+                        preferencesStore,
+                        passwordResetStore,
+                        new TestPasswordHasher(),
+                        new JwtService("test-secret", clock, Duration.ofHours(8)),
+                        new ResetTokenService(),
+                        devOutbox,
+                        eventBus,
+                        clock,
+                        "http://localhost:5173"
+                )
+                : null;
         SseBroadcaster broadcaster = new SseBroadcaster(eventBus);
+        DiagnosticsTracker diagnosticsTracker = new DiagnosticsTracker(eventBus, clock, () -> 0);
         apiServer = new ApiServer(
                 0,
                 signalStore,
                 eventStore,
                 broadcaster,
                 List.of(),
-                DiagnosticsTracker.empty(),
+                diagnosticsTracker,
                 Map.of(
                         "defaultZipCodes", List.of("02108", "98101"),
+                        "defaultWatchlist", List.of("AAPL", "MSFT", "SPY", "BTC-USD", "ETH-USD"),
                         "defaultNewsSources", List.of(
                                 Map.of("id", "cnn", "name", "CNN", "type", "rss", "url", "https://example.com/cnn", "enabledByDefault", true, "requiresConfig", false, "note", ""),
                                 Map.of("id", "abc", "name", "ABC News", "type", "rss", "url", "https://feeds.abcnews.com/abcnews/topstories", "enabledByDefault", false, "requiresConfig", false, "note", ""),
@@ -488,7 +862,7 @@ class AuthApiIntegrationTest {
         AtomicInteger refreshCount = new AtomicInteger();
         apiServer.setCollectorRefreshHook(collectors -> refreshCount.incrementAndGet());
         apiServer.start();
-        return new TestRuntime(apiServer.actualPort(), userStore, passwordResetStore, signalStore, refreshCount);
+        return new TestRuntime(apiServer.actualPort(), userStore, passwordResetStore, signalStore, refreshCount, eventBus);
     }
 
     private static void waitForRefreshCount(AtomicInteger counter, int expectedAtLeast) throws InterruptedException {
@@ -527,7 +901,8 @@ class AuthApiIntegrationTest {
             UserStore userStore,
             PasswordResetStore passwordResetStore,
             JsonFileSignalStore signalStore,
-            AtomicInteger refreshCount
+            AtomicInteger refreshCount,
+            EventBus eventBus
     ) {
         URI uri(String path) {
             return URI.create("http://localhost:" + port + path);

@@ -11,6 +11,8 @@ import com.signalsentinel.core.events.EnvWeatherUpdated;
 import com.signalsentinel.core.events.Event;
 import com.signalsentinel.core.events.LoginFailed;
 import com.signalsentinel.core.events.LoginSucceeded;
+import com.signalsentinel.core.events.LocalHappeningsIngested;
+import com.signalsentinel.core.events.NewsItemsIngested;
 import com.signalsentinel.core.events.NewsUpdated;
 import com.signalsentinel.core.events.PasswordResetFailed;
 import com.signalsentinel.core.events.PasswordResetRequested;
@@ -34,6 +36,8 @@ public final class EventCodec {
             Map.entry("SiteFetched", SiteFetched.class),
             Map.entry("ContentChanged", ContentChanged.class),
             Map.entry("NewsUpdated", NewsUpdated.class),
+            Map.entry("NewsItemsIngested", NewsItemsIngested.class),
+            Map.entry("LocalHappeningsIngested", LocalHappeningsIngested.class),
             Map.entry("WeatherUpdated", WeatherUpdated.class),
             Map.entry("EnvWeatherUpdated", EnvWeatherUpdated.class),
             Map.entry("EnvAqiUpdated", EnvAqiUpdated.class),
@@ -91,6 +95,8 @@ public final class EventCodec {
         bus.subscribe(SiteFetched.class, consumer::accept);
         bus.subscribe(ContentChanged.class, consumer::accept);
         bus.subscribe(NewsUpdated.class, consumer::accept);
+        bus.subscribe(NewsItemsIngested.class, consumer::accept);
+        bus.subscribe(LocalHappeningsIngested.class, consumer::accept);
         bus.subscribe(WeatherUpdated.class, consumer::accept);
         bus.subscribe(EnvWeatherUpdated.class, consumer::accept);
         bus.subscribe(EnvAqiUpdated.class, consumer::accept);

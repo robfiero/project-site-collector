@@ -8,6 +8,7 @@ import com.signalsentinel.collectors.config.RssSourceConfig;
 import com.signalsentinel.core.events.AlertRaised;
 import com.signalsentinel.core.events.CollectorTickCompleted;
 import com.signalsentinel.core.events.CollectorTickStarted;
+import com.signalsentinel.core.events.NewsItemsIngested;
 import com.signalsentinel.core.events.NewsUpdated;
 import com.signalsentinel.core.model.NewsSignal;
 import com.signalsentinel.core.model.NewsStory;
@@ -40,20 +41,32 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.logging.Logger;
 
 public class RssNewsCollector implements Collector {
     public static final String CONFIG_KEY = "rssCollector";
     private static final Logger LOGGER = Logger.getLogger(RssNewsCollector.class.getName());
     private static final String DEFAULT_USER_AGENT = "SignalSentinel/0.1 (contact: support@example.com)";
+    private static final Duration NYT_BACKOFF_INITIAL = Duration.ofMinutes(1);
+    private static final Duration NYT_BACKOFF_MAX = Duration.ofMinutes(15);
+    private static final Duration NYT_CACHE_TTL = Duration.ofMinutes(20);
     private final Duration interval;
+    private final Function<String, String> envReader;
+    private final Map<String, NyrSourceState> nytSourceState = new ConcurrentHashMap<>();
 
     public RssNewsCollector() {
-        this(Duration.ofSeconds(60));
+        this(Duration.ofSeconds(60), key -> System.getenv().getOrDefault(key, ""));
     }
 
     public RssNewsCollector(Duration interval) {
+        this(interval, key -> System.getenv().getOrDefault(key, ""));
+    }
+
+    RssNewsCollector(Duration interval, Function<String, String> envReader) {
         this.interval = interval;
+        this.envReader = envReader;
     }
 
     @Override
@@ -106,10 +119,20 @@ public class RssNewsCollector implements Collector {
             }
         }
         if (isNytSource(sourceId)) {
-            String nytApiKey = System.getenv().getOrDefault("NYT_API_KEY", "").trim();
+            String nytApiKey = envReader.apply("NYT_API_KEY").trim();
             if (nytApiKey.isBlank()) {
                 LOGGER.info("Skipping NYT source because NYT_API_KEY is not configured.");
                 return CompletableFuture.completedFuture(new RssPollOutcome(sourceId, true, 0, 0));
+            }
+            Instant now = ctx.clock().instant();
+            NyrSourceState state = nytSourceState.computeIfAbsent(sourceId, ignored -> NyrSourceState.empty());
+            if (state.nextRetryAt() != null && now.isBefore(state.nextRetryAt())) {
+                if (state.cachedSignal() != null && state.cacheExpiresAt() != null && now.isBefore(state.cacheExpiresAt())) {
+                    ctx.signalStore().putNews(state.cachedSignal());
+                    ctx.eventBus().publish(new NewsUpdated(now, sourceId, state.cachedSignal().stories().size()));
+                    return CompletableFuture.completedFuture(new RssPollOutcome(sourceId, true, state.cachedSignal().stories().size(), 0));
+                }
+                return CompletableFuture.completedFuture(new RssPollOutcome(sourceId, false, 0, 0));
             }
             requestUrl = appendApiKey(source.url(), nytApiKey);
         }
@@ -131,31 +154,62 @@ public class RssNewsCollector implements Collector {
                         return new RssPollOutcome(source.source(), false, 0, 0);
                     }
 
-                    if (response.statusCode() == 401 || response.statusCode() == 403) {
+                    int statusCode = response.statusCode();
+                    if (statusCode == 429 && isNytSource(sourceId)) {
+                        Instant now = ctx.clock().instant();
+                        NyrSourceState prior = nytSourceState.getOrDefault(sourceId, NyrSourceState.empty());
+                        Duration backoff = nextBackoffDuration(response, now, prior.backoff());
+                        Instant nextRetry = now.plus(backoff);
+                        LOGGER.warning(() -> "NYT source rate-limited source=" + sourceId
+                                + " status=429"
+                                + " nextRetryAt=" + nextRetry);
+                        ctx.eventBus().publish(new AlertRaised(
+                                now,
+                                "collector",
+                                "NYT source rate-limited: " + sourceId,
+                                Map.of(
+                                        "collector", name(),
+                                        "source", source.source(),
+                                        "status", 429,
+                                        "nextRetryAt", nextRetry.toString()
+                                )
+                        ));
+
+                        if (prior.cachedSignal() != null && prior.cacheExpiresAt() != null && now.isBefore(prior.cacheExpiresAt())) {
+                            ctx.signalStore().putNews(prior.cachedSignal());
+                            ctx.eventBus().publish(new NewsUpdated(now, sourceId, prior.cachedSignal().stories().size()));
+                            nytSourceState.put(sourceId, prior.withCooldown(nextRetry, backoff, "HTTP 429"));
+                            return new RssPollOutcome(sourceId, true, prior.cachedSignal().stories().size(), 0);
+                        }
+                        nytSourceState.put(sourceId, prior.withCooldown(nextRetry, backoff, "HTTP 429"));
+                        return new RssPollOutcome(sourceId, false, 0, 0);
+                    }
+
+                    if (statusCode == 401 || statusCode == 403) {
                         String contentType = response.headers().firstValue("Content-Type").orElse("-");
                         LOGGER.warning(() -> "RSS access denied source=" + source.source()
-                                + " status=" + response.statusCode()
+                                + " status=" + statusCode
                                 + " contentType=" + contentType
                                 + " url=" + sanitizeText(source.url()));
                         ctx.eventBus().publish(new AlertRaised(
                                 ctx.clock().instant(),
                                 "collector",
-                                "RSS fetch failed for " + source.source() + ": HTTP " + response.statusCode(),
-                                Map.of("collector", name(), "source", source.source(), "url", source.url(), "status", response.statusCode())
+                                "RSS fetch failed for " + source.source() + ": HTTP " + statusCode,
+                                Map.of("collector", name(), "source", source.source(), "url", source.url(), "status", statusCode)
                         ));
                         return new RssPollOutcome(source.source(), false, 0, 0);
                     }
 
-                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    if (statusCode < 200 || statusCode >= 300) {
                         String contentType = response.headers().firstValue("Content-Type").orElse("-");
                         LOGGER.warning(() -> "RSS fetch failed source=" + source.source() + " url=" + sanitizeText(source.url())
-                                + " status=" + response.statusCode()
+                                + " status=" + statusCode
                                 + " contentType=" + contentType);
                         ctx.eventBus().publish(new AlertRaised(
                                 ctx.clock().instant(),
                                 "collector",
-                                "RSS fetch failed for " + source.source() + ": HTTP " + response.statusCode(),
-                                Map.of("collector", name(), "source", source.source(), "url", source.url(), "status", response.statusCode())
+                                "RSS fetch failed for " + source.source() + ": HTTP " + statusCode,
+                                Map.of("collector", name(), "source", source.source(), "url", source.url(), "status", statusCode)
                         ));
                         return new RssPollOutcome(source.source(), false, 0, 0);
                     }
@@ -189,7 +243,13 @@ public class RssNewsCollector implements Collector {
 
                     NewsSignal signal = new NewsSignal(sourceId, stories, ctx.clock().instant());
                     ctx.signalStore().putNews(signal);
-                    ctx.eventBus().publish(new NewsUpdated(ctx.clock().instant(), sourceId, stories.size()));
+                    if (isNytSource(sourceId)) {
+                        Instant now = ctx.clock().instant();
+                        nytSourceState.put(sourceId, NyrSourceState.success(signal, now.plus(NYT_CACHE_TTL)));
+                    }
+                    Instant publishAt = ctx.clock().instant();
+                    ctx.eventBus().publish(new NewsUpdated(publishAt, sourceId, stories.size()));
+                    ctx.eventBus().publish(new NewsItemsIngested(publishAt, sourceId, stories.size()));
 
                     List<String> loweredKeywords = cfg.keywords().stream()
                             .map(keyword -> keyword.toLowerCase(Locale.ROOT))
@@ -212,6 +272,44 @@ public class RssNewsCollector implements Collector {
                     }
                     return new RssPollOutcome(sourceId, true, stories.size(), matched.size());
                 });
+    }
+
+    private static Duration nextBackoffDuration(HttpResponse<String> response, Instant now, Duration previousBackoff) {
+        Optional<String> retryAfter = response.headers().firstValue("Retry-After");
+        if (retryAfter.isPresent()) {
+            Optional<Duration> parsed = parseRetryAfter(retryAfter.get(), now);
+            if (parsed.isPresent()) {
+                Duration duration = parsed.get();
+                return duration.compareTo(NYT_BACKOFF_MAX) > 0 ? NYT_BACKOFF_MAX : duration;
+            }
+        }
+        Duration base = previousBackoff == null || previousBackoff.isZero() ? NYT_BACKOFF_INITIAL : previousBackoff.multipliedBy(2);
+        return base.compareTo(NYT_BACKOFF_MAX) > 0 ? NYT_BACKOFF_MAX : base;
+    }
+
+    private static Optional<Duration> parseRetryAfter(String raw, Instant now) {
+        if (raw == null || raw.isBlank()) {
+            return Optional.empty();
+        }
+        String value = raw.trim();
+        try {
+            long seconds = Long.parseLong(value);
+            if (seconds <= 0) {
+                return Optional.empty();
+            }
+            return Optional.of(Duration.ofSeconds(seconds));
+        } catch (NumberFormatException ignored) {
+            // Try HTTP-date format next.
+        }
+        try {
+            Instant retryAt = ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+            if (retryAt.isBefore(now)) {
+                return Optional.empty();
+            }
+            return Optional.of(Duration.between(now, retryAt));
+        } catch (DateTimeParseException ignored) {
+            return Optional.empty();
+        }
     }
 
     private CompletableFuture<HttpResponse<String>> sendWithRedirects(
@@ -544,5 +642,25 @@ public class RssNewsCollector implements Collector {
     }
 
     private record RssPollOutcome(String source, boolean success, int storyCount, int keywordMatches) {
+    }
+
+    private record NyrSourceState(
+            Instant nextRetryAt,
+            Duration backoff,
+            String lastFailureReason,
+            NewsSignal cachedSignal,
+            Instant cacheExpiresAt
+    ) {
+        static NyrSourceState empty() {
+            return new NyrSourceState(null, Duration.ZERO, null, null, null);
+        }
+
+        static NyrSourceState success(NewsSignal signal, Instant cacheExpiresAt) {
+            return new NyrSourceState(null, Duration.ZERO, null, signal, cacheExpiresAt);
+        }
+
+        NyrSourceState withCooldown(Instant nextRetryAt, Duration backoff, String reason) {
+            return new NyrSourceState(nextRetryAt, backoff, reason, cachedSignal, cacheExpiresAt);
+        }
     }
 }

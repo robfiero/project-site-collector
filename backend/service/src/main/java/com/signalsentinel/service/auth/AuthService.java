@@ -16,9 +16,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class AuthService {
+    private static final Set<String> ALLOWED_THEME_MODES = Set.of("light", "dark");
+    private static final Set<String> ALLOWED_ACCENTS = Set.of("default", "gold", "blue", "green");
     private final UserStore userStore;
     private final PreferencesStore preferencesStore;
     private final PasswordResetStore passwordResetStore;
@@ -105,7 +108,15 @@ public final class AuthService {
     }
 
     public UserPreferences getPreferences(String userId) {
-        return preferencesStore.getForUser(userId);
+        UserPreferences current = preferencesStore.getForUser(userId);
+        return new UserPreferences(
+                userId,
+                current.zipCodes(),
+                current.watchlist(),
+                current.newsSourceIds(),
+                normalizeChoice(current.themeMode(), ALLOWED_THEME_MODES, UserPreferences.DEFAULT_THEME_MODE),
+                normalizeChoice(current.accent(), ALLOWED_ACCENTS, UserPreferences.DEFAULT_ACCENT)
+        );
     }
 
     public UserPreferences updatePreferences(String userId, UserPreferences incoming) {
@@ -119,9 +130,22 @@ public final class AuthService {
                 userId,
                 incoming.zipCodes().stream().map(String::trim).filter(v -> !v.isBlank()).toList(),
                 incoming.watchlist().stream().map(String::trim).map(String::toUpperCase).filter(v -> !v.isBlank()).toList(),
-                incoming.newsSourceIds().stream().map(String::trim).filter(v -> !v.isBlank()).toList()
+                incoming.newsSourceIds().stream().map(String::trim).filter(v -> !v.isBlank()).toList(),
+                normalizeChoice(incoming.themeMode(), ALLOWED_THEME_MODES, UserPreferences.DEFAULT_THEME_MODE),
+                normalizeChoice(incoming.accent(), ALLOWED_ACCENTS, UserPreferences.DEFAULT_ACCENT)
         );
         return preferencesStore.putForUser(validated);
+    }
+
+    private static String normalizeChoice(String rawValue, Set<String> allowed, String fallback) {
+        if (rawValue == null) {
+            return fallback;
+        }
+        String normalized = rawValue.trim().toLowerCase(Locale.ROOT);
+        if (allowed.contains(normalized)) {
+            return normalized;
+        }
+        return fallback;
     }
 
     public void requestPasswordReset(String email, String ipAddress) {

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
+  fetchAdminEmailPreview,
+  fetchAdminTrends,
   fetchDevOutbox,
   fetchCatalogDefaults,
   fetchCollectorStatus,
@@ -8,6 +10,7 @@ import {
   fetchEnvironment,
   fetchEvents,
   fetchHealth,
+  fetchMarkets,
   fetchMe,
   fetchMetrics,
   fetchNewsSourceSettings,
@@ -16,6 +19,7 @@ import {
   forgotPassword,
   login,
   logout,
+  resetSettings,
   resetPassword,
   saveMyPreferences,
   signup,
@@ -23,9 +27,9 @@ import {
   type AuthUserView,
   type DevOutboxEmail
 } from './api';
-import { demoLocalHappenings, demoQuote } from './demoData';
+import { demoLocalHappenings } from './demoData';
 import { filterEvents, normalizeEventEnvelope } from './eventFeed';
-import { formatMarketSymbolLabel } from './markets';
+import { companyNameForSymbol, formatMarketSymbolLabel } from './markets';
 import { formatPlaceLabel } from './places';
 import cnnLogo from './assets/news-logos/cnn.svg';
 import foxLogo from './assets/news-logos/fox.svg';
@@ -40,7 +44,10 @@ import type {
   EnvStatus,
   EventEnvelope,
   LocalHappeningsSignal,
+  AdminEmailPreview,
+  AdminTrendsSnapshot,
   MarketQuoteSignal,
+  MarketsSnapshot,
   MetricsResponse,
   SignalsSnapshot
 } from './models';
@@ -51,8 +58,43 @@ const MAX_WATCHLIST = 25;
 const FALLBACK_DEFAULT_ZIPS = ['02108', '98101'];
 const FALLBACK_DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
 const FALLBACK_DEFAULT_NEWS_SOURCES = ['cnn', 'wsj', 'verge'];
+const DEFAULT_THEME_MODE = 'dark';
+const DEFAULT_ACCENT = 'default';
 const AUTH_TRANSITION_COLLECTORS = ['envCollector', 'rssCollector', 'localEventsCollector'];
 const INTENDED_ROUTE_KEY = 'todays-overview:intended-route';
+const NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_ID: Record<string, string> = {
+  abc: 'abcnews.go.com',
+  cbs: 'cbsnews.com',
+  cnn: 'cnn.com',
+  fox: 'foxnews.com',
+  nbc: 'nbcnews.com',
+  npr_morning_edition: 'npr.org',
+  npr_news_now: 'npr.org',
+  npr_politics: 'npr.org',
+  nyt: 'nytimes.com',
+  nyt_most_popular: 'nytimes.com',
+  reuters: 'reuters.com',
+  wsj: 'wsj.com'
+};
+const NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_LABEL: Record<string, string> = {
+  'abc news': 'abcnews.go.com',
+  'abcnews': 'abcnews.go.com',
+  'cbs news': 'cbsnews.com',
+  cnn: 'cnn.com',
+  fox: 'foxnews.com',
+  'fox news': 'foxnews.com',
+  'new york times': 'nytimes.com',
+  'nyt': 'nytimes.com',
+  'nyt most popular': 'nytimes.com',
+  'npr news now': 'npr.org',
+  'npr news now (breaking)': 'npr.org',
+  'npr politics': 'npr.org',
+  'npr morning edition': 'npr.org',
+  'reuters': 'reuters.com',
+  'wall street journal': 'wsj.com'
+};
+const WRAPPER_QUERY_KEYS = ['url', 'u', 'uri', 'link', 'dest', 'destination', 'rurl', 'sourceUrl', 'next'] as const;
+const GENERIC_ICON_HOSTS = new Set(['www.google.com', 'google.com', 'gstatic.com', 'img.youtube.com']);
 const KNOWN_SSE_TYPES = [
   'CollectorTickStarted',
   'CollectorTickCompleted',
@@ -62,6 +104,7 @@ const KNOWN_SSE_TYPES = [
   'EnvWeatherUpdated',
   'EnvAqiUpdated',
   'NewsUpdated',
+  'NewsItemsIngested',
   'UserRegistered',
   'LoginSucceeded',
   'LoginFailed',
@@ -83,8 +126,22 @@ const NEWS_LOGO_BY_SOURCE_ID: Record<string, { src: string; alt: string }> = {
 
 type RouteName = 'home' | 'settings' | 'admin' | 'login' | 'signup' | 'forgot' | 'reset';
 type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
+type ThemeMode = 'light' | 'dark';
+type Accent = 'default' | 'gold' | 'blue' | 'green';
 
 const emptySnapshot: SignalsSnapshot = { sites: {}, news: {}, weather: {} };
+const emptyMarketsSnapshot: MarketsSnapshot = { status: 'ok', asOf: '', items: [] };
+const emptyAdminTrends: AdminTrendsSnapshot = { windowStart: '', bucketSeconds: 300, series: [] };
+const emptyAdminEmailPreview: AdminEmailPreview = {
+  enabled: false,
+  mode: 'n/a',
+  lastSentAt: null,
+  lastError: null,
+  generatedAt: '',
+  subject: '',
+  body: '',
+  includedCounts: { sites: 0, newsStories: 0, localEvents: 0, weather: 0, markets: 0 }
+};
 const emptyDefaults: CatalogDefaults = { defaultZipCodes: [], defaultNewsSources: [], defaultWatchlist: [] };
 const emptyMetrics: MetricsResponse = { sseClientsConnected: 0, eventsEmittedTotal: 0, recentEventsPerMinute: 0, collectors: {} };
 
@@ -109,12 +166,24 @@ export default function App() {
   const [zipCodes, setZipCodes] = useState<string[]>(loadZipCodes());
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist());
   const [selectedNewsSourceIds, setSelectedNewsSourceIds] = useState<string[]>(FALLBACK_DEFAULT_NEWS_SOURCES);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(DEFAULT_THEME_MODE);
+  const [accent, setAccent] = useState<Accent>(DEFAULT_ACCENT);
   const [authUser, setAuthUser] = useState<AuthUserView | null>(null);
   const [authResolved, setAuthResolved] = useState<boolean>(false);
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
   const [devOutbox, setDevOutbox] = useState<DevOutboxEmail[]>([]);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [settingsSaveState, setSettingsSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [marketsSnapshot, setMarketsSnapshot] = useState<MarketsSnapshot>(emptyMarketsSnapshot);
+  const [marketsLoading, setMarketsLoading] = useState<boolean>(false);
+  const [marketsError, setMarketsError] = useState<string | null>(null);
+  const [signalsLoading, setSignalsLoading] = useState<boolean>(true);
+  const [adminTrends, setAdminTrends] = useState<AdminTrendsSnapshot>(emptyAdminTrends);
+  const [adminTrendsLoading, setAdminTrendsLoading] = useState<boolean>(false);
+  const [adminTrendsError, setAdminTrendsError] = useState<string | null>(null);
+  const [adminEmailPreview, setAdminEmailPreview] = useState<AdminEmailPreview>(emptyAdminEmailPreview);
+  const [adminEmailLoading, setAdminEmailLoading] = useState<boolean>(false);
+  const [adminEmailError, setAdminEmailError] = useState<string | null>(null);
   const [zipInput, setZipInput] = useState<string>('');
   const [symbolInput, setSymbolInput] = useState<string>('');
 
@@ -149,7 +218,14 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     async function bootstrap(): Promise<void> {
+      setSignalsLoading(true);
       try {
+        const maybeMe = fetchMe().catch((error) => {
+          if (isUnauthorizedError(error)) {
+            return null;
+          }
+          throw error;
+        });
         const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse, meResponse, outboxResponse, newsSourceSettings] = await Promise.all([
           fetchHealth(),
           fetchSignals(),
@@ -158,7 +234,7 @@ export default function App() {
           fetchCollectorStatus(),
           fetchCatalogDefaults(),
           fetchConfigView(),
-          fetchMe(),
+          maybeMe,
           fetchDevOutbox(),
           fetchNewsSourceSettings()
         ]);
@@ -199,6 +275,8 @@ export default function App() {
                   ? newsSourceSettings.effectiveSelectedSources
                   : (defaultsResponse.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES))
             );
+            setThemeMode(prefs.themeMode);
+            setAccent(prefs.accent);
           } catch (prefError) {
             if (isUnauthorizedError(prefError)) {
               handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
@@ -215,6 +293,10 @@ export default function App() {
         }
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
         setAuthResolved(true);
+      } finally {
+        if (mounted) {
+          setSignalsLoading(false);
+        }
       }
     }
     bootstrap();
@@ -236,6 +318,52 @@ export default function App() {
     }, 15_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (route !== 'admin') {
+      return;
+    }
+    if (!authUser) {
+      setAdminTrends(emptyAdminTrends);
+      setAdminTrendsError(null);
+      setAdminEmailPreview(emptyAdminEmailPreview);
+      setAdminEmailError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAdminData = async (): Promise<void> => {
+      setAdminTrendsLoading(true);
+      setAdminEmailLoading(true);
+      try {
+        const [trends, preview] = await Promise.all([fetchAdminTrends(), fetchAdminEmailPreview()]);
+        if (cancelled) {
+          return;
+        }
+        setAdminTrends(trends);
+        setAdminTrendsError(null);
+        setAdminEmailPreview(preview);
+        setAdminEmailError(null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : 'Failed to load admin diagnostics';
+        setAdminTrendsError(message);
+        setAdminEmailError(message);
+      } finally {
+        if (!cancelled) {
+          setAdminTrendsLoading(false);
+          setAdminEmailLoading(false);
+        }
+      }
+    };
+
+    void loadAdminData();
+    return () => {
+      cancelled = true;
+    };
+  }, [route, authUser]);
 
   useEffect(() => {
     if (authResolved && route === 'settings' && !authUser) {
@@ -342,7 +470,12 @@ export default function App() {
       catalogDefaults.defaultNewsSources.map((source) => [source.id, source.name])
     );
   }, [catalogDefaults.defaultNewsSources]);
-  const marketEntries = useMemo(() => watchlist.map((symbol) => snapshot.markets?.[symbol] ?? demoQuote(symbol)), [watchlist, snapshot.markets]);
+  const newsSourceUrls = useMemo(() => {
+    return new Map(
+      catalogDefaults.defaultNewsSources.map((source) => [source.id, source.url])
+    );
+  }, [catalogDefaults.defaultNewsSources]);
+  const marketEntries = useMemo(() => marketsSnapshot.items, [marketsSnapshot.items]);
   const effectiveZipCodes = useMemo(
     () => normalizeZipCodes(
       zipCodes.length > 0
@@ -394,6 +527,47 @@ export default function App() {
     };
   }, [effectiveZipCodes]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+    const effectiveSymbols = watchlist.map((value) => value.trim().toUpperCase()).filter((value) => value.length > 0);
+
+    async function loadMarkets(): Promise<void> {
+      setMarketsLoading(true);
+      try {
+        const payload = await fetchMarkets(effectiveSymbols);
+        if (cancelled) {
+          return;
+        }
+        setMarketsSnapshot(payload);
+        setMarketsError(null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setMarketsError(err instanceof Error ? err.message : 'Markets unavailable');
+      } finally {
+        if (!cancelled) {
+          setMarketsLoading(false);
+        }
+      }
+    }
+
+    loadMarkets();
+    timer = window.setInterval(loadMarkets, 60_000);
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearInterval(timer);
+      }
+    };
+  }, [watchlist]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    document.documentElement.dataset.accent = accent;
+  }, [themeMode, accent]);
+
   const addZip = (): 'added' | 'invalid' | 'duplicate' | 'limit' => {
     const value = zipInput.trim();
     if (!/^\d{5}$/.test(value)) {
@@ -436,17 +610,49 @@ export default function App() {
     return outcome;
   };
 
-  const resetSettingsToDefaults = () => {
-    const nextZips = catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes.slice(0, 10) : FALLBACK_DEFAULT_ZIPS;
-    const nextWatchlist = catalogDefaults.defaultWatchlist.length > 0 ? catalogDefaults.defaultWatchlist : FALLBACK_DEFAULT_WATCHLIST;
-    const nextNewsSources = catalogDefaults.defaultSelectedNewsSources && catalogDefaults.defaultSelectedNewsSources.length > 0
-      ? catalogDefaults.defaultSelectedNewsSources
-      : FALLBACK_DEFAULT_NEWS_SOURCES;
-    setZipCodes(nextZips);
-    setWatchlist(nextWatchlist);
-    setSelectedNewsSourceIds(nextNewsSources);
-    setZipInput('');
-    setSymbolInput('');
+  const reorderByValue = <T extends string>(values: T[], source: T, target: T): T[] => {
+    const sourceIndex = values.indexOf(source);
+    const targetIndex = values.indexOf(target);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+      return values;
+    }
+    const next = [...values];
+    const [moved] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    return next;
+  };
+
+  const resetUiPreferences = async (): Promise<'ok' | 'error'> => {
+    try {
+      const response = await resetSettings('ui');
+      setThemeMode(response.preferences.themeMode);
+      setAccent(response.preferences.accent);
+      setZipInput('');
+      setSymbolInput('');
+      return 'ok';
+    } catch {
+      return 'error';
+    }
+  };
+
+  const resetCollectorDefaults = async (): Promise<'ok' | 'error'> => {
+    try {
+      const response = await resetSettings('collectors');
+      setZipCodes(response.preferences.zipCodes);
+      setWatchlist(response.preferences.watchlist);
+      setSelectedNewsSourceIds(
+        response.preferences.newsSourceIds.length > 0
+          ? response.preferences.newsSourceIds
+          : (catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES)
+      );
+      setThemeMode(response.preferences.themeMode);
+      setAccent(response.preferences.accent);
+      setZipInput('');
+      setSymbolInput('');
+      return 'ok';
+    } catch {
+      return 'error';
+    }
   };
 
   const restorePlacesDefaults = () => {
@@ -476,7 +682,9 @@ export default function App() {
       saveMyPreferences({
         zipCodes,
         watchlist,
-        newsSourceIds: selectedNewsSourceIds
+        newsSourceIds: selectedNewsSourceIds,
+        themeMode,
+        accent
       }).then(() => {
       setSettingsSaveState('saved');
       if (settingsSavedTimerRef.current !== null) {
@@ -491,7 +699,7 @@ export default function App() {
       }
       setSettingsSaveState('idle');
     });
-  }, [authUser, zipCodes, watchlist, selectedNewsSourceIds]);
+  }, [authUser, zipCodes, watchlist, selectedNewsSourceIds, themeMode, accent]);
 
   useEffect(() => {
     return () => {
@@ -547,6 +755,8 @@ export default function App() {
       setZipCodes(nextZips);
       setWatchlist(loadWatchlist());
       setSelectedNewsSourceIds(catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES);
+      setThemeMode(DEFAULT_THEME_MODE);
+      setAccent(DEFAULT_ACCENT);
       await refreshAfterAuthTransition(nextZips);
       window.location.hash = '#/';
     } catch (err) {
@@ -558,7 +768,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-container">
-          <div className="card">
+          <div className="card header-card">
             <div className="header-top">
               <h1>Today&apos;s Overview</h1>
               <nav className="nav">
@@ -597,9 +807,15 @@ export default function App() {
             envByZip={envByZip}
             newsEntries={newsEntries}
             resolveNewsSourceLabel={(sourceId) => newsSourceLabels.get(sourceId) ?? sourceId}
+            resolveNewsSourceUrl={(sourceId) => newsSourceUrls.get(sourceId)}
             happeningsEntries={happeningsEntries}
             happeningsAttribution={happeningsAttribution}
             marketEntries={marketEntries}
+            newsLoading={signalsLoading}
+            happeningsLoading={signalsLoading}
+            marketsLoading={marketsLoading}
+            marketsError={marketsError}
+            marketsAsOf={marketsSnapshot.asOf}
           />
         ) : route === 'settings' ? (
           authUser ? (
@@ -610,6 +826,7 @@ export default function App() {
             setZipInput={setZipInput}
             addZip={addZip}
             removeZip={(zip) => setZipCodes((previous) => previous.filter((value) => value !== zip))}
+            reorderZip={(sourceZip, targetZip) => setZipCodes((previous) => reorderByValue(previous, sourceZip, targetZip))}
             watchlist={watchlist}
             symbolInput={symbolInput}
             setSymbolInput={setSymbolInput}
@@ -617,10 +834,13 @@ export default function App() {
             maxWatchlist={MAX_WATCHLIST}
             saveState={settingsSaveState}
             removeSymbol={(symbol) => setWatchlist((previous) => previous.filter((value) => value !== symbol))}
+            reorderSymbol={(sourceSymbol, targetSymbol) => setWatchlist((previous) => reorderByValue(previous, sourceSymbol, targetSymbol))}
             onRestorePlaces={restorePlacesDefaults}
             onRestoreWatchlist={restoreWatchlistDefaults}
             availableNewsSources={catalogDefaults.defaultNewsSources}
             selectedNewsSourceIds={selectedNewsSourceIds}
+            themeMode={themeMode}
+            accent={accent}
             onToggleNewsSource={(sourceId, checked) => {
               setSelectedNewsSourceIds((previous) => {
                 if (checked) {
@@ -633,7 +853,10 @@ export default function App() {
               });
             }}
             onRestoreNewsSources={restoreNewsSourceDefaults}
-            onReset={resetSettingsToDefaults}
+            onThemeModeChange={setThemeMode}
+            onAccentChange={setAccent}
+            onResetUiPreferences={resetUiPreferences}
+            onResetCollectorDefaults={resetCollectorDefaults}
           />
           ) : authResolved ? (
             <AuthPage
@@ -670,6 +893,8 @@ export default function App() {
                   ? prefs.newsSourceIds
                   : (catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES)
               );
+              setThemeMode(prefs.themeMode);
+              setAccent(prefs.accent);
               await refreshAfterAuthTransition(prefs.zipCodes);
               window.location.hash = consumeIntendedRoute();
             }}
@@ -742,6 +967,12 @@ export default function App() {
             onTogglePause={() => setEventFeedPaused((prev) => !prev)}
             devOutbox={devOutbox}
             currentUser={authUser}
+            trends={adminTrends}
+            trendsLoading={adminTrendsLoading}
+            trendsError={adminTrendsError}
+            emailPreview={adminEmailPreview}
+            emailPreviewLoading={adminEmailLoading}
+            emailPreviewError={adminEmailError}
           />
         )}
       </div>
@@ -754,9 +985,15 @@ type HomePageProps = {
   envByZip: Record<string, EnvStatus>;
   newsEntries: SignalsSnapshot['news'][string][];
   resolveNewsSourceLabel: (sourceId: string) => string;
+  resolveNewsSourceUrl: (sourceId: string) => string | undefined;
   happeningsEntries: LocalHappeningsSignal[];
   happeningsAttribution: string;
   marketEntries: MarketQuoteSignal[];
+  newsLoading: boolean;
+  happeningsLoading: boolean;
+  marketsLoading: boolean;
+  marketsError: string | null;
+  marketsAsOf: string;
 };
 
 function HomePage(props: HomePageProps) {
@@ -814,19 +1051,35 @@ function HomePage(props: HomePageProps) {
           )}
         </section>
 
-        <section className="card news">
+          <section className="card news">
           <h2>Top News</h2>
           <div className="card-body">
-            {props.newsEntries.length === 0 ? <p className="empty">No news signals yet.</p> : props.newsEntries.map((source) => (
+            {props.newsLoading ? (
+              <div className="skeleton-block">
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line" />
+              </div>
+            ) : null}
+            {!props.newsLoading && props.newsEntries.length === 0 ? (
+              <p className="empty">No news items available from your selected sources.</p>
+            ) : null}
+            {!props.newsLoading && props.newsEntries.map((source) => (
               <article key={source.source} className="item">
                 <h3 className="news-source-heading">
-                  <NewsSourceLogo sourceId={source.source} />
+                  <NewsSourceFavicon
+                    sourceId={source.source}
+                    sourceLabel={props.resolveNewsSourceLabel(source.source)}
+                    sourceUrl={props.resolveNewsSourceUrl(source.source)}
+                  />
                   <span>{props.resolveNewsSourceLabel(source.source)}</span>
                 </h3>
                 {source.stories.length === 0 ? <p className="empty">No stories in current snapshot.</p> : (
                   <ul className="news-list top-news">
                     {source.stories.slice(0, 5).map((story, idx) => (
-                      <li key={`${source.source}-${idx}`}><a href={story.link} target="_blank" rel="noreferrer">{story.title}</a></li>
+                      <li key={`${source.source}-${idx}`} className="content-row">
+                        <StoryLink title={story.title} href={story.link} />
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -841,13 +1094,23 @@ function HomePage(props: HomePageProps) {
           <h2>Local What&apos;s Happening</h2>
           <p className="meta section-description">{props.happeningsAttribution}</p>
           <div className="card-body">
-            {props.happeningsEntries.length === 0 ? <p className="empty">No local places selected.</p> : props.happeningsEntries.map((entry) => (
+            {props.happeningsLoading ? (
+              <div className="skeleton-block">
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line" />
+              </div>
+            ) : null}
+            {!props.happeningsLoading && props.happeningsEntries.length === 0 ? (
+              <p className="empty">No local events found for your ZIP codes yet.</p>
+            ) : null}
+            {!props.happeningsLoading && props.happeningsEntries.map((entry) => (
               <article key={entry.location} className="item">
                 <h3>{entry.location.startsWith('lat:') ? 'Local area' : formatPlaceLabel(entry.location)}</h3>
                 <ul>
                   {filterDisplayableHappeningItems(entry.items).map((item) => (
-                    <li key={item.id}>
-                      <a href={item.url} target="_blank" rel="noreferrer">{item.name}</a>
+                    <li key={item.id} className="content-row">
+                      <ContentLink title={item.name} href={item.url} />
                     </li>
                   ))}
                 </ul>
@@ -858,11 +1121,41 @@ function HomePage(props: HomePageProps) {
 
         <section className="card">
           <h2>Markets</h2>
+          <p className="meta section-description">As of {props.marketsLoading ? <span className="skeleton skeleton-meta" /> : formatInstant(props.marketsAsOf)}</p>
           <div className="card-body">
-            {props.marketEntries.length === 0 ? <p className="empty">No symbols in watchlist.</p> : props.marketEntries.map((entry) => (
-              <article key={entry.symbol} className="item market-row">
-                <h3>{entry.symbol}</h3>
-                <p><span className="market-value">{entry.price.toFixed(2)} ({entry.change >= 0 ? '+' : ''}{entry.change.toFixed(2)})</span></p>
+            {props.marketsLoading ? (
+              <div className="skeleton-chart" role="presentation">
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+              </div>
+            ) : null}
+            {!props.marketsLoading && props.marketsError ? <p className="empty">Market data unavailable: {props.marketsError}</p> : null}
+            {!props.marketsLoading && !props.marketsError && props.marketEntries.length === 0 ? <p className="empty">No market data available right now.</p> : null}
+            {!props.marketsLoading && !props.marketsError && props.marketEntries.map((entry) => (
+              <article key={entry.symbol} className="item market-item">
+                <a
+                  href={buildMarketHref(entry.symbol)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="market-row-link"
+                  aria-label={`${entry.symbol} details`}
+                >
+                  <div className="market-left">
+                    <h3>{entry.symbol}</h3>
+                    <p className="market-company">{companyNameForSymbol(entry.symbol)}</p>
+                    <svg className={`market-sparkline ${entry.change >= 0 ? 'up' : 'down'}`} viewBox="0 0 72 20" aria-hidden="true" focusable="false">
+                      <polyline points={sparklinePoints(entry.symbol, entry.change)} />
+                    </svg>
+                  </div>
+                  <div className="market-right">
+                    <p className="market-price">${entry.price.toFixed(2)}</p>
+                    <span className={`market-change-chip ${entry.change > 0 ? 'positive' : entry.change < 0 ? 'negative' : 'flat'}`}>
+                      {entry.change > 0 ? '+' : ''}{entry.change.toFixed(2)}
+                    </span>
+                  </div>
+                </a>
               </article>
             ))}
           </div>
@@ -872,6 +1165,38 @@ function HomePage(props: HomePageProps) {
   );
 }
 
+function StoryLink({ title, href }: { title: string; href?: string }) {
+  if (!href || !isValidHttpUrl(href)) {
+    return <span>{title}</span>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {title}
+    </a>
+  );
+}
+
+function ContentLink({ title, href }: { title: string; href?: string }) {
+  if (!href || !isValidHttpUrl(href)) {
+    return <span>{title}</span>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {title}
+    </a>
+  );
+}
+
+function buildMarketHref(symbol: string): string {
+  const encoded = encodeURIComponent(symbol.trim());
+  return `https://finance.yahoo.com/quote/${encoded}`;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed);
+}
+
 type SettingsPageProps = {
   zipCodes: string[];
   resolveZipLabel: (zip: string) => string;
@@ -879,6 +1204,7 @@ type SettingsPageProps = {
   setZipInput: Dispatch<SetStateAction<string>>;
   addZip: () => 'added' | 'invalid' | 'duplicate' | 'limit';
   removeZip: (zip: string) => void;
+  reorderZip: (sourceZip: string, targetZip: string) => void;
   watchlist: string[];
   symbolInput: string;
   setSymbolInput: Dispatch<SetStateAction<string>>;
@@ -886,13 +1212,19 @@ type SettingsPageProps = {
   maxWatchlist: number;
   saveState: 'idle' | 'saving' | 'saved';
   removeSymbol: (symbol: string) => void;
+  reorderSymbol: (sourceSymbol: string, targetSymbol: string) => void;
   onRestorePlaces: () => void;
   onRestoreWatchlist: () => void;
   availableNewsSources: CatalogDefaults['defaultNewsSources'];
   selectedNewsSourceIds: string[];
+  themeMode: ThemeMode;
+  accent: Accent;
   onToggleNewsSource: (sourceId: string, checked: boolean) => void;
   onRestoreNewsSources: () => void;
-  onReset: () => void;
+  onThemeModeChange: (value: ThemeMode) => void;
+  onAccentChange: (value: Accent) => void;
+  onResetUiPreferences: () => Promise<'ok' | 'error'>;
+  onResetCollectorDefaults: () => Promise<'ok' | 'error'>;
 };
 
 function SettingsPage(props: SettingsPageProps) {
@@ -903,7 +1235,10 @@ function SettingsPage(props: SettingsPageProps) {
   const [zipHint, setZipHint] = useState<string>('');
   const [symbolHint, setSymbolHint] = useState<string>('');
   const [resetHint, setResetHint] = useState<string>('');
-  const defaultResetPrompt = 'Reset Places + Watchlist to defaults?';
+  const [draggingZip, setDraggingZip] = useState<string | null>(null);
+  const [draggingSymbol, setDraggingSymbol] = useState<string | null>(null);
+  const uiResetPrompt = 'Reset UI preferences only?';
+  const collectorResetPrompt = 'Reset collector defaults (ZIP codes, watchlist, and news sources)?';
 
   return (
     <main className="settings-page">
@@ -964,7 +1299,26 @@ function SettingsPage(props: SettingsPageProps) {
           {zipHint && <p className="meta inline-hint">{zipHint}</p>}
           <div className="chips">
             {props.zipCodes.map((zip) => (
-              <div key={zip} className="chip-item">
+              <div
+                key={zip}
+                className={`chip-item ${draggingZip === zip ? 'dragging' : ''}`}
+                draggable
+                onDragStart={(event) => {
+                  setDraggingZip(zip);
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', zip);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (!draggingZip || draggingZip === zip) {
+                    return;
+                  }
+                  props.reorderZip(draggingZip, zip);
+                  setDraggingZip(null);
+                }}
+                onDragEnd={() => setDraggingZip(null)}
+              >
                 <span className="chip-label">{props.resolveZipLabel(zip)}</span>
                 <button
                   type="button"
@@ -1029,7 +1383,26 @@ function SettingsPage(props: SettingsPageProps) {
           {symbolHint && <p className="meta inline-hint">{symbolHint}</p>}
           <div className="chips">
             {props.watchlist.map((symbol) => (
-              <div key={symbol} className="chip-item">
+              <div
+                key={symbol}
+                className={`chip-item ${draggingSymbol === symbol ? 'dragging' : ''}`}
+                draggable
+                onDragStart={(event) => {
+                  setDraggingSymbol(symbol);
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', symbol);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (!draggingSymbol || draggingSymbol === symbol) {
+                    return;
+                  }
+                  props.reorderSymbol(draggingSymbol, symbol);
+                  setDraggingSymbol(null);
+                }}
+                onDragEnd={() => setDraggingSymbol(null)}
+              >
                 <span className="chip-label">{formatMarketSymbolLabel(symbol)}</span>
                 <button
                   type="button"
@@ -1041,6 +1414,39 @@ function SettingsPage(props: SettingsPageProps) {
                 </button>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="card controls">
+          <div className="card-title-row">
+            <h2>Appearance</h2>
+          </div>
+          <p className="meta">Theme updates apply immediately and are saved to your account.</p>
+          <div className="settings-select-grid">
+            <label className="settings-select-field">
+              <span>Theme mode</span>
+              <select
+                aria-label="Theme mode"
+                value={props.themeMode}
+                onChange={(event) => props.onThemeModeChange(event.target.value as ThemeMode)}
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </label>
+            <label className="settings-select-field">
+              <span>Accent</span>
+              <select
+                aria-label="Accent"
+                value={props.accent}
+                onChange={(event) => props.onAccentChange(event.target.value as Accent)}
+              >
+                <option value="default">Default</option>
+                <option value="gold">Gold</option>
+                <option value="blue">Blue</option>
+                <option value="green">Green</option>
+              </select>
+            </label>
           </div>
         </section>
 
@@ -1083,21 +1489,35 @@ function SettingsPage(props: SettingsPageProps) {
       </section>
       <section className="card danger-zone">
         <h2>Danger zone</h2>
-        <p className="meta">Reset Places and Watchlist back to default values for this device.</p>
+        <p className="meta">Run scoped reset actions to avoid unintentional settings changes.</p>
         <div className="settings-actions">
           <button
             type="button"
-            onClick={() => {
-              if (!window.confirm(defaultResetPrompt)) {
+            onClick={async () => {
+              if (!window.confirm(uiResetPrompt)) {
                 return;
               }
-              props.onReset();
+              const result = await props.onResetUiPreferences();
               setZipHint('');
               setSymbolHint('');
-              setResetHint('Reset complete');
+              setResetHint(result === 'ok' ? 'UI preferences reset complete' : 'UI preferences reset failed');
             }}
           >
-            Reset to defaults
+            Reset UI preferences
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm(collectorResetPrompt)) {
+                return;
+              }
+              const result = await props.onResetCollectorDefaults();
+              setZipHint('');
+              setSymbolHint('');
+              setResetHint(result === 'ok' ? 'Collector defaults reset complete' : 'Collector defaults reset failed');
+            }}
+          >
+            Reset collector defaults
           </button>
           {resetHint && <p className="meta inline-hint">{resetHint}</p>}
         </div>
@@ -1392,7 +1812,7 @@ function filterDisplayableHappeningItems(items: LocalHappeningsSignal['items']):
   const seenTitles = new Set<string>();
   return items.filter((item) => {
     const title = item.name.trim();
-    if (title.length === 0 || item.url.trim().length === 0) {
+    if (title.length === 0) {
       return false;
     }
     if (seenTitles.has(title)) {
@@ -1443,6 +1863,83 @@ function NewsSourceLogo({ sourceId }: { sourceId: string }) {
   return <img className="news-logo-img" src={logo.src} alt={logo.alt} loading="lazy" />;
 }
 
+function normalizeNewsSourceKey(value?: string): string {
+  return (value ?? '').trim().toLowerCase().replace(/\(.*?\)/g, '').replace(/[-_/]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function parseNewsSourceDomain(sourceUrl?: string): string | null {
+  if (!sourceUrl) {
+    return null;
+  }
+  try {
+    const parsed = new URL(sourceUrl);
+    const canonical = unwrapRedirectSourceUrl(parsed) ?? parsed;
+    const host = canonical.hostname.trim().toLowerCase();
+    if (GENERIC_ICON_HOSTS.has(host)) {
+      return null;
+    }
+    const resolvedHost = host.startsWith('www.')
+      ? host.slice(4)
+      : host;
+    return resolvedHost || null;
+  } catch {
+    return null;
+  }
+}
+
+function unwrapRedirectSourceUrl(parsedUrl: URL): URL | null {
+  for (const key of WRAPPER_QUERY_KEYS) {
+    const value = parsedUrl.searchParams.get(key);
+    if (!value) {
+      continue;
+    }
+    try {
+      const candidate = new URL(value);
+      const candidateHost = candidate.hostname.toLowerCase();
+      if (GENERIC_ICON_HOSTS.has(candidateHost)) {
+        continue;
+      }
+      return candidate;
+    } catch {
+      // ignore non-absolute values
+    }
+  }
+  return null;
+}
+
+function resolveNewsSourceIconDomain(sourceId: string, sourceLabel: string, sourceUrl?: string): string | null {
+  const mappedById = NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_ID[normalizeNewsSourceKey(sourceId)];
+  if (mappedById) {
+    return mappedById;
+  }
+  const mappedByLabel = NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_LABEL[normalizeNewsSourceKey(sourceLabel)];
+  if (mappedByLabel) {
+    return mappedByLabel;
+  }
+  return parseNewsSourceDomain(sourceUrl);
+}
+
+function NewsSourceFavicon({ sourceId, sourceLabel, sourceUrl }: {
+  sourceId: string;
+  sourceLabel: string;
+  sourceUrl?: string;
+}) {
+  const domain = resolveNewsSourceIconDomain(sourceId, sourceLabel, sourceUrl);
+  const [fallback, setFallback] = useState(false);
+  if (!domain || fallback) {
+    return <span className="news-source-icon news-logo-fallback">{sourceId.toUpperCase()}</span>;
+  }
+  return (
+    <img
+      className="news-source-icon"
+      src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`}
+      alt={`${sourceLabel} source icon`}
+      onError={() => setFallback(true)}
+      loading="lazy"
+    />
+  );
+}
+
 function weatherIcon(conditions: string): string {
   const value = conditions.toLowerCase();
   if (value.includes('rain') || value.includes('storm')) {
@@ -1474,4 +1971,17 @@ function formatInstant(value: string | number | null | undefined): string {
     return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
   }
   return String(value);
+}
+
+function sparklinePoints(symbol: string, change: number): string {
+  const seed = Math.abs(Array.from(symbol).reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) | 0, 7));
+  const points: string[] = [];
+  let y = 10;
+  for (let i = 0; i < 12; i++) {
+    const drift = change >= 0 ? -0.35 : 0.35;
+    const jitter = (((seed >> (i % 8)) & 3) - 1.5) * 0.65;
+    y = Math.max(2, Math.min(18, y + drift + jitter));
+    points.push(`${i * 6},${y.toFixed(2)}`);
+  }
+  return points.join(' ');
 }

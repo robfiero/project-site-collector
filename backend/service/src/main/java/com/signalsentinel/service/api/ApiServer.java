@@ -2,6 +2,8 @@ package com.signalsentinel.service.api;
 
 import com.signalsentinel.collectors.api.Collector;
 import com.signalsentinel.core.events.Event;
+import com.signalsentinel.core.model.LocalHappeningsSignal;
+import com.signalsentinel.core.model.NewsSignal;
 import com.signalsentinel.core.util.JsonUtils;
 import com.signalsentinel.service.auth.AuthMiddleware;
 import com.signalsentinel.service.auth.AuthService;
@@ -9,6 +11,7 @@ import com.signalsentinel.service.auth.AuthUser;
 import com.signalsentinel.service.auth.UserPreferences;
 import com.signalsentinel.service.email.DevOutboxEmailSender;
 import com.signalsentinel.service.env.EnvService;
+import com.signalsentinel.service.market.MarketDataService;
 import com.signalsentinel.service.store.EventStore;
 import com.signalsentinel.service.store.ServiceSignalStore;
 import com.sun.net.httpserver.HttpExchange;
@@ -26,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -49,6 +53,7 @@ public class ApiServer {
     private final Map<String, Object> configView;
     private final AuthService authService;
     private final EnvService envService;
+    private final MarketDataService marketDataService;
     private final boolean secureCookies;
     private final boolean devOutboxEnabled;
     private final DevOutboxEmailSender devOutboxEmailSender;
@@ -72,6 +77,7 @@ public class ApiServer {
                 null,
                 Map.of(),
                 Map.of(),
+                null,
                 null,
                 null,
                 false,
@@ -101,6 +107,7 @@ public class ApiServer {
                 configView,
                 null,
                 null,
+                null,
                 false,
                 false,
                 null
@@ -118,6 +125,7 @@ public class ApiServer {
             Map<String, Object> configView,
             AuthService authService,
             EnvService envService,
+            MarketDataService marketDataService,
             boolean secureCookies,
             boolean devOutboxEnabled,
             DevOutboxEmailSender devOutboxEmailSender
@@ -132,6 +140,7 @@ public class ApiServer {
         this.configView = configView;
         this.authService = authService;
         this.envService = envService;
+        this.marketDataService = marketDataService;
         this.secureCookies = secureCookies;
         this.devOutboxEnabled = devOutboxEnabled;
         this.devOutboxEmailSender = devOutboxEmailSender;
@@ -162,6 +171,7 @@ public class ApiServer {
                 configView,
                 authService,
                 null,
+                null,
                 secureCookies,
                 devOutboxEnabled,
                 devOutboxEmailSender
@@ -181,8 +191,12 @@ public class ApiServer {
             server.createContext("/api/metrics", this::handleMetrics);
             server.createContext("/api/catalog/defaults", this::handleCatalogDefaults);
             server.createContext("/api/settings/newsSources", this::handleNewsSourceSettings);
+            server.createContext("/api/settings/reset", this::handleSettingsReset);
             server.createContext("/api/config", this::handleConfig);
             server.createContext("/api/env", this::handleEnvironment);
+            server.createContext("/api/markets", this::handleMarkets);
+            server.createContext("/api/admin/trends", this::handleAdminTrends);
+            server.createContext("/api/admin/email/preview", this::handleAdminEmailPreview);
             server.createContext("/api/auth/signup", this::handleSignup);
             server.createContext("/api/auth/login", this::handleLogin);
             server.createContext("/api/auth/logout", this::handleLogout);
@@ -384,7 +398,14 @@ public class ApiServer {
             UserPreferences existing = authService.getPreferences(user.get().id());
             UserPreferences updated = authService.updatePreferences(
                     user.get().id(),
-                    new UserPreferences(existing.userId(), existing.zipCodes(), existing.watchlist(), validated)
+                    new UserPreferences(
+                            existing.userId(),
+                            existing.zipCodes(),
+                            existing.watchlist(),
+                            validated,
+                            existing.themeMode(),
+                            existing.accent()
+                    )
             );
             writeJson(exchange, 200, Map.of(
                     "availableSources", availableNewsSources(),
@@ -404,6 +425,64 @@ public class ApiServer {
         writeJson(exchange, 200, configView);
     }
 
+    private void handleSettingsReset(HttpExchange exchange) throws IOException {
+        if (!ensurePost(exchange)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, Object> body = readBody(exchange);
+            String scope = String.valueOf(body.getOrDefault("scope", ""))
+                    .trim()
+                    .toLowerCase(Locale.ROOT);
+            if (!"ui".equals(scope) && !"collectors".equals(scope) && !"all".equals(scope)) {
+                writeJson(exchange, 400, Map.of("error", "scope must be one of: ui, collectors, all"));
+                return;
+            }
+            UserPreferences current = authService.getPreferences(user.get().id());
+            UserPreferences next = current;
+            if ("ui".equals(scope) || "all".equals(scope)) {
+                next = authService.updatePreferences(
+                        user.get().id(),
+                        new UserPreferences(
+                                next.userId(),
+                                next.zipCodes(),
+                                next.watchlist(),
+                                next.newsSourceIds(),
+                                UserPreferences.DEFAULT_THEME_MODE,
+                                UserPreferences.DEFAULT_ACCENT
+                        )
+                );
+            }
+            if ("collectors".equals(scope) || "all".equals(scope)) {
+                next = authService.updatePreferences(
+                        user.get().id(),
+                        new UserPreferences(
+                                next.userId(),
+                                defaultZipCodes(),
+                                defaultWatchlist(),
+                                defaultSelectedNewsSources(),
+                                next.themeMode(),
+                                next.accent()
+                        )
+                );
+            }
+            writeJson(exchange, 200, Map.of(
+                    "scopeApplied", scope,
+                    "preferences", next
+            ));
+        } catch (IllegalArgumentException badInput) {
+            writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
+        }
+    }
+
     private void handleEnvironment(HttpExchange exchange) throws IOException {
         if (!ensureGet(exchange, true)) {
             return;
@@ -420,6 +499,97 @@ public class ApiServer {
             writeJson(exchange, 400, Map.of("error", badRequest.getMessage()));
         } catch (RuntimeException upstreamFailure) {
             writeJson(exchange, 502, Map.of("error", "environment_lookup_failed"));
+        }
+    }
+
+    private void handleAdminTrends(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            return;
+        }
+        writeJson(exchange, 200, diagnostics().trendsSnapshot());
+    }
+
+    private void handleAdminEmailPreview(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            return;
+        }
+
+        Map<String, Object> snapshot = new HashMap<>(signalStore.getAllSignals());
+        int siteCount = countMapEntries(snapshot.get("sites"));
+        int newsStoryCount = countNewsStories(snapshot.get("news"), effectiveSelectedNewsSources(exchange));
+        int localEventsCount = countLocalEventItems(snapshot.get("localHappenings"), effectiveZipCodes(exchange));
+        int weatherCount = countMapEntries(snapshot.get("weather"));
+        int marketsCount = countMapEntries(snapshot.get("markets"));
+        int totalIncluded = siteCount + newsStoryCount + localEventsCount + weatherCount + marketsCount;
+
+        Instant now = Instant.now();
+        String subject = "Signal Sentinel Digest Preview - " + now.toString().substring(0, 10);
+        String body = "";
+        if (totalIncluded > 0) {
+            List<String> lines = List.of(
+                    "Digest preview generated at " + now,
+                    "Sites tracked: " + siteCount,
+                    "News stories included: " + newsStoryCount,
+                    "Local happenings included: " + localEventsCount,
+                    "Weather entries: " + weatherCount,
+                    "Market entries: " + marketsCount
+            );
+            body = String.join("\n", lines);
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("enabled", true);
+        payload.put("mode", devOutboxEnabled ? "dev_outbox" : "smtp_or_configured");
+        payload.put("lastSentAt", "");
+        payload.put("lastError", "");
+        payload.put("generatedAt", now.toString());
+        payload.put("subject", subject);
+        payload.put("body", body);
+        payload.put("includedCounts", Map.of(
+                "sites", siteCount,
+                "newsStories", newsStoryCount,
+                "localEvents", localEventsCount,
+                "weather", weatherCount,
+                "markets", marketsCount
+        ));
+        writeJson(exchange, 200, payload);
+    }
+
+    private void handleMarkets(HttpExchange exchange) throws IOException {
+        if (!ensureGet(exchange, true)) {
+            return;
+        }
+        if (marketDataService == null) {
+            writeJson(exchange, 501, Map.of("error", "markets_unavailable"));
+            return;
+        }
+        try {
+            Map<String, String> query = queryParams(exchange.getRequestURI());
+            List<String> symbols = parseSymbolQuery(query.get("symbols"));
+            if (symbols.isEmpty()) {
+                symbols = defaultWatchlist();
+            }
+            writeJson(exchange, 200, marketDataService.fetch(symbols));
+        } catch (IllegalArgumentException badRequest) {
+            writeJson(exchange, 400, Map.of("error", badRequest.getMessage()));
+        } catch (IllegalStateException upstreamError) {
+            writeJson(exchange, 502, Map.of("error", upstreamError.getMessage()));
         }
     }
 
@@ -636,6 +806,95 @@ public class ApiServer {
             values.add(value);
         }
         return values;
+    }
+
+    private List<String> parseSymbolQuery(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        String[] tokens = raw.split(",");
+        if (tokens.length > 100) {
+            throw new IllegalArgumentException("Too many symbols requested");
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String token : tokens) {
+            String value = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
+            if (value.isBlank()) {
+                continue;
+            }
+            if (!value.matches("[A-Z0-9._\\-]{1,16}")) {
+                throw new IllegalArgumentException("Invalid symbol: " + value);
+            }
+            values.add(value);
+        }
+        return new ArrayList<>(values);
+    }
+
+    private List<String> defaultWatchlist() {
+        Object raw = catalogDefaults.get("defaultWatchlist");
+        if (!(raw instanceof List<?> values)) {
+            return List.of();
+        }
+        List<String> list = new ArrayList<>();
+        for (Object value : values) {
+            if (value instanceof String symbol && !symbol.isBlank()) {
+                list.add(symbol.toUpperCase(Locale.ROOT));
+            }
+        }
+        return list;
+    }
+
+    private int countMapEntries(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return map.size();
+        }
+        return 0;
+    }
+
+    private int countNewsStories(Object value, Set<String> selectedSourceIds) {
+        if (!(value instanceof Map<?, ?> newsMap)) {
+            return 0;
+        }
+        int total = 0;
+        for (Map.Entry<?, ?> entry : newsMap.entrySet()) {
+            if (!(entry.getKey() instanceof String sourceId) || !selectedSourceIds.contains(sourceId)) {
+                continue;
+            }
+            if (entry.getValue() instanceof NewsSignal signal) {
+                total += signal.stories().size();
+                continue;
+            }
+            if (entry.getValue() instanceof Map<?, ?> signal) {
+                Object stories = signal.get("stories");
+                if (stories instanceof List<?> list) {
+                    total += list.size();
+                }
+            }
+        }
+        return total;
+    }
+
+    private int countLocalEventItems(Object value, Set<String> effectiveZips) {
+        if (!(value instanceof Map<?, ?> happeningsMap)) {
+            return 0;
+        }
+        int total = 0;
+        for (Map.Entry<?, ?> entry : happeningsMap.entrySet()) {
+            if (!(entry.getKey() instanceof String zip) || !effectiveZips.contains(zip)) {
+                continue;
+            }
+            if (entry.getValue() instanceof LocalHappeningsSignal signal) {
+                total += signal.items().size();
+                continue;
+            }
+            if (entry.getValue() instanceof Map<?, ?> signal) {
+                Object items = signal.get("items");
+                if (items instanceof List<?> list) {
+                    total += list.size();
+                }
+            }
+        }
+        return total;
     }
 
     private DiagnosticsTracker diagnostics() {

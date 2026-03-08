@@ -8,6 +8,7 @@ import com.signalsentinel.collectors.config.TicketmasterCollectorConfig;
 import com.signalsentinel.core.events.AlertRaised;
 import com.signalsentinel.core.events.CollectorTickCompleted;
 import com.signalsentinel.core.events.CollectorTickStarted;
+import com.signalsentinel.core.events.LocalHappeningsIngested;
 import com.signalsentinel.core.model.HappeningItem;
 import com.signalsentinel.core.model.LocalHappeningsSignal;
 import com.signalsentinel.core.util.JsonUtils;
@@ -110,6 +111,12 @@ public final class TicketmasterEventsCollector implements Collector {
                     outcome.items(),
                     SOURCE_ATTRIBUTION,
                     ctx.clock().instant()
+            ));
+            ctx.eventBus().publish(new LocalHappeningsIngested(
+                    ctx.clock().instant(),
+                    SOURCE_NAME,
+                    zip,
+                    outcome.items().size()
             ));
         }
         if (failedZips == 0) {

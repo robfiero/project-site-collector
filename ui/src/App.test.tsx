@@ -10,21 +10,42 @@ vi.mock('./api', () => ({
   fetchCollectorStatus: vi.fn(async () => ({})),
   fetchCatalogDefaults: vi.fn(async () => ({ defaultZipCodes: ['02108'], defaultNewsSources: [], defaultWatchlist: ['AAPL'] })),
   fetchConfigView: vi.fn(async () => ({ collectors: [] })),
+  fetchAdminTrends: vi.fn(async () => ({
+    asOf: '2026-02-25T20:00:00Z',
+    windowStart: '2026-02-25T19:55:00Z',
+    bucketSeconds: 300,
+    series: []
+  })),
+  fetchAdminEmailPreview: vi.fn(async () => ({
+    enabled: true,
+    mode: 'dev_outbox',
+    lastSentAt: '',
+    lastError: '',
+    generatedAt: '2026-02-25T20:00:00Z',
+    subject: 'Signal Sentinel Digest Preview - 2026-02-25',
+    body: '',
+    includedCounts: { sites: 0, newsStories: 0, localEvents: 0, weather: 0, markets: 0 }
+  })),
   fetchNewsSourceSettings: vi.fn(async () => ({
     availableSources: [
-      { id: 'cnn', name: 'CNN', type: 'rss', url: 'https://example.com/cnn' },
-      { id: 'wsj', name: 'WSJ', type: 'rss', url: 'https://example.com/wsj' }
+      { id: 'cnn', name: 'CNN', type: 'rss', url: 'https://www.cnn.com/rss' },
+      { id: 'wsj', name: 'WSJ', type: 'rss', url: 'https://www.wsj.com/news' }
     ],
     effectiveSelectedSources: ['cnn', 'wsj']
   })),
   fetchEnvironment: vi.fn(async () => ([])),
+  fetchMarkets: vi.fn(async () => ({ status: 'ok', asOf: '2026-02-25T18:00:00Z', items: [] })),
   fetchMe: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
-  fetchMyPreferences: vi.fn(async () => ({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [] })),
+  fetchMyPreferences: vi.fn(async () => ({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: [], themeMode: 'dark', accent: 'default' })),
   saveMyPreferences: vi.fn(async (payload) => payload),
   fetchDevOutbox: vi.fn(async () => []),
   login: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
   signup: vi.fn(async () => ({ id: 'u-1', email: 'user@example.com' })),
   logout: vi.fn(async () => {}),
+  resetSettings: vi.fn(async (scope: 'ui' | 'collectors' | 'all') => ({
+    scopeApplied: scope,
+    preferences: { zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'], themeMode: 'dark', accent: 'default' }
+  })),
   triggerCollectorRefresh: vi.fn(async () => {}),
   forgotPassword: vi.fn(async () => {}),
   resetPassword: vi.fn(async () => {})
@@ -62,6 +83,16 @@ class FakeEventSource {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('App', () => {
   beforeEach(() => {
     const store = new Map<string, string>();
@@ -91,7 +122,7 @@ describe('App', () => {
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['02108', '98101'],
       watchlist: ['AAPL'],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['02108', '98101']));
     localStorage.setItem('signal-sentinel:watchlist', JSON.stringify(['AAPL']));
@@ -144,7 +175,8 @@ describe('App', () => {
     expect(screen.getByText('Enter a symbol (e.g., NVDA)')).toBeTruthy();
   });
 
-  it('prevents duplicates and can reset settings to defaults', async () => {
+  it('prevents duplicates and supports scoped danger-zone reset actions', async () => {
+    const api = await import('./api');
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['02108']));
     localStorage.setItem('signal-sentinel:watchlist', JSON.stringify(['AAPL']));
     window.location.hash = '#/settings';
@@ -160,13 +192,16 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add Symbol' }));
     expect(screen.getAllByText(/AAPL/).length).toBe(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset UI preferences' }));
     expect(window.confirm).toHaveBeenCalled();
-    expect(screen.getByText('Reset complete')).toBeTruthy();
+    await waitFor(() => expect(api.resetSettings).toHaveBeenCalledWith('ui'));
+    expect(screen.getByText('UI preferences reset complete')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset collector defaults' }));
+    await waitFor(() => expect(api.resetSettings).toHaveBeenCalledWith('collectors'));
+    expect(screen.getByText('Collector defaults reset complete')).toBeTruthy();
     expect(screen.getByText('Boston, MA (02108)')).toBeTruthy();
     expect(screen.getByText(/AAPL/)).toBeTruthy();
-    await waitFor(() => expect(localStorage.getItem('signal-sentinel:zip-codes')).toContain('02108'));
-    await waitFor(() => expect(localStorage.getItem('signal-sentinel:watchlist')).toContain('AAPL'));
   });
 
   it('restores defaults per card without resetting the other section', async () => {
@@ -174,7 +209,7 @@ describe('App', () => {
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['60601'],
       watchlist: ['TSLA'],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['60601']));
     localStorage.setItem('signal-sentinel:watchlist', JSON.stringify(['TSLA']));
@@ -188,6 +223,102 @@ describe('App', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Restore defaults' })[1]);
     expect(screen.getByText(/AAPL/)).toBeTruthy();
+  });
+
+  it('shows scoped danger-zone confirmation copy', async () => {
+    window.location.hash = '#/settings';
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /danger zone/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Reset UI preferences' }));
+    expect(window.confirm).toHaveBeenCalledWith('Reset UI preferences only?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset collector defaults' }));
+    expect(window.confirm).toHaveBeenCalledWith('Reset collector defaults (ZIP codes, watchlist, and news sources)?');
+  });
+
+  it('applies theme controls immediately and ui reset restores default theme preferences', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108'],
+      watchlist: ['AAPL'],
+      newsSourceIds: ['cnn', 'wsj'],
+      themeMode: 'light',
+      accent: 'green'
+    });
+    vi.mocked(api.resetSettings).mockImplementation(async (scope) => ({
+      scopeApplied: scope,
+      preferences: {
+        zipCodes: ['02108'],
+        watchlist: ['AAPL'],
+        newsSourceIds: ['cnn', 'wsj'],
+        themeMode: 'dark',
+        accent: 'default'
+      }
+    }));
+    window.location.hash = '#/settings';
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByLabelText('Theme mode')).toBeTruthy());
+    const themeSelect = screen.getByLabelText('Theme mode') as HTMLSelectElement;
+    const accentSelect = screen.getByLabelText('Accent') as HTMLSelectElement;
+    expect(themeSelect.value).toBe('light');
+    expect(accentSelect.value).toBe('green');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.dataset.accent).toBe('green');
+
+    fireEvent.change(themeSelect, { target: { value: 'dark' } });
+    fireEvent.change(accentSelect, { target: { value: 'blue' } });
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
+    await waitFor(() => expect(document.documentElement.dataset.accent).toBe('blue'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset UI preferences' }));
+    await waitFor(() => expect(api.resetSettings).toHaveBeenCalledWith('ui'));
+    await waitFor(() => expect((screen.getByLabelText('Theme mode') as HTMLSelectElement).value).toBe('dark'));
+    await waitFor(() => expect((screen.getByLabelText('Accent') as HTMLSelectElement).value).toBe('default'));
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
+    await waitFor(() => expect(document.documentElement.dataset.accent).toBe('default'));
+  });
+
+  it('allows drag/drop reorder for ZIP codes and watchlist symbols in settings', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
+      zipCodes: ['02108', '98101'],
+      watchlist: ['AAPL', 'MSFT'],
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
+    });
+    window.location.hash = '#/settings';
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Boston, MA (02108)')).toBeTruthy());
+    const cards = Array.from(document.querySelectorAll('.card.controls'));
+    const placesCard = cards[0];
+    const watchlistCard = cards[1];
+
+    const placeLabelsBefore = Array.from(placesCard.querySelectorAll('.chip-label')).map((node) => node.textContent?.trim());
+    expect(placeLabelsBefore).toEqual(['Boston, MA (02108)', 'Seattle, WA (98101)']);
+    const symbolLabelsBefore = Array.from(watchlistCard.querySelectorAll('.chip-label')).map((node) => node.textContent?.trim());
+    expect(symbolLabelsBefore).toEqual(['AAPL - Apple Inc.', 'MSFT - Microsoft Corporation']);
+
+    const zipChips = Array.from(placesCard.querySelectorAll('.chip-item'));
+    const symbolChips = Array.from(watchlistCard.querySelectorAll('.chip-item'));
+    const zipTransfer = { setData: vi.fn(), getData: vi.fn(), effectAllowed: 'move' };
+    const symbolTransfer = { setData: vi.fn(), getData: vi.fn(), effectAllowed: 'move' };
+
+    fireEvent.dragStart(zipChips[1], { dataTransfer: zipTransfer });
+    fireEvent.dragOver(zipChips[0], { dataTransfer: zipTransfer });
+    fireEvent.drop(zipChips[0], { dataTransfer: zipTransfer });
+    fireEvent.dragEnd(zipChips[1], { dataTransfer: zipTransfer });
+
+    fireEvent.dragStart(symbolChips[1], { dataTransfer: symbolTransfer });
+    fireEvent.dragOver(symbolChips[0], { dataTransfer: symbolTransfer });
+    fireEvent.drop(symbolChips[0], { dataTransfer: symbolTransfer });
+    fireEvent.dragEnd(symbolChips[1], { dataTransfer: symbolTransfer });
+
+    const placeLabelsAfter = Array.from(placesCard.querySelectorAll('.chip-label')).map((node) => node.textContent?.trim());
+    expect(placeLabelsAfter).toEqual(['Seattle, WA (98101)', 'Boston, MA (02108)']);
+    const symbolLabelsAfter = Array.from(watchlistCard.querySelectorAll('.chip-label')).map((node) => node.textContent?.trim());
+    expect(symbolLabelsAfter).toEqual(['MSFT - Microsoft Corporation', 'AAPL - Apple Inc.']);
   });
 
   it('forces refresh when navigating from settings back to home', async () => {
@@ -206,7 +337,7 @@ describe('App', () => {
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['02108'],
       watchlist: [],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     vi.mocked(api.fetchEnvironment).mockResolvedValueOnce([]);
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['02108']));
@@ -250,10 +381,90 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText(/72\.5 F, Clear/)).toBeTruthy());
     await waitFor(() => expect(screen.getByText((_, node) => node?.textContent === 'AQI 42 - Good')).toBeTruthy());
     expect(screen.queryByText(/1970/)).toBeNull();
-    expect(screen.getByText('No symbols in watchlist.')).toBeTruthy();
+    expect(screen.getByText('No market data available right now.')).toBeTruthy();
   });
 
-  it('deduplicates local happenings by title and hides items without links', async () => {
+  it('shows markets loading then success with as-of timestamp', async () => {
+    const api = await import('./api');
+    const pending = deferred<{ status: string; asOf: string; items: Array<{ symbol: string; price: number; change: number; updatedAt: string }> }>();
+    vi.mocked(api.fetchMarkets)
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue({
+        status: 'ok',
+        asOf: '2026-02-25T18:30:00Z',
+        items: [{ symbol: 'AAPL', price: 212.34, change: 1.22, updatedAt: '2026-02-25T18:29:00Z' }]
+      });
+
+    render(<App />);
+    await waitFor(() => expect(document.querySelector('.skeleton-block')).toBeTruthy());
+
+    pending.resolve({
+      status: 'ok',
+      asOf: '2026-02-25T18:30:00Z',
+      items: [{ symbol: 'AAPL', price: 212.34, change: 1.22, updatedAt: '2026-02-25T18:29:00Z' }]
+    });
+
+    await waitFor(() => expect(screen.getByText(/AAPL/)).toBeTruthy());
+    expect(screen.getByText(/\+1\.22/)).toBeTruthy();
+    expect(screen.getByText(/As of/)).toBeTruthy();
+  });
+
+  it('shows skeletons during home loading and replaces them with content', async () => {
+    const api = await import('./api');
+    const pendingSignals = deferred<{
+      sites: {};
+      news: {};
+      weather: {};
+      localHappenings: Record<string, never>;
+    }>();
+    const pendingMarkets = deferred<{ status: string; asOf: string; items: Array<{ symbol: string; price: number; change: number; updatedAt: string }> }>();
+
+    vi.mocked(api.fetchSignals).mockReturnValueOnce(pendingSignals.promise);
+    vi.mocked(api.fetchMarkets)
+      .mockReturnValueOnce(pendingMarkets.promise)
+      .mockResolvedValue({
+        status: 'ok',
+        asOf: '2026-02-25T18:30:00Z',
+        items: [{ symbol: 'AAPL', price: 212.34, change: 1.22, updatedAt: '2026-02-25T18:29:00Z' }]
+      });
+
+    render(<App />);
+
+    expect(document.querySelector('.skeleton-block')).toBeTruthy();
+
+    pendingSignals.resolve({
+      sites: {},
+      news: {
+        cnn: {
+          source: 'cnn',
+          updatedAt: '2026-02-25T18:00:00Z',
+          stories: [{ title: 'Market-ready story', link: 'https://example.com/story', publishedAt: '2026-02-25T17:00:00Z', source: 'cnn' }]
+        }
+      },
+      weather: {}
+    });
+    pendingMarkets.resolve({
+      status: 'ok',
+      asOf: '2026-02-25T18:30:00Z',
+      items: [{ symbol: 'AAPL', price: 212.34, change: 1.22, updatedAt: '2026-02-25T18:29:00Z' }]
+    });
+
+    await waitFor(() => expect(document.querySelector('.skeleton-block')).toBeNull());
+    expect(screen.getByText('Market-ready story')).toBeTruthy();
+    const marketLink = await screen.findByRole('link', { name: /AAPL details/i });
+    expect((marketLink.getAttribute('href') ?? '').includes('AAPL')).toBe(true);
+  });
+
+  it('shows markets error state when request fails', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMarkets).mockRejectedValueOnce(new Error('Markets request failed (502)'));
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/Market data unavailable: Markets request failed \(502\)/)).toBeTruthy());
+  });
+
+  it('deduplicates local happenings by title and renders missing-link items as plain text', async () => {
     const api = await import('./api');
     vi.mocked(api.fetchSignals).mockResolvedValueOnce({
       sites: {},
@@ -320,8 +531,9 @@ describe('App', () => {
     const jazzLink = screen.getByRole('link', { name: 'Jazz Night' });
     expect(jazzLink.getAttribute('href')).toBe('https://example.com/jazz-night');
     expect(screen.getAllByRole('link', { name: 'Jazz Night' })).toHaveLength(1);
+    expect(screen.getByText('No Link Event')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Comedy Show' })).toBeTruthy();
-    expect(screen.queryByText('No Link Event')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'No Link Event' })).toBeNull();
   });
 
   it('formats numeric env updatedAt as epoch-seconds, not 1970', async () => {
@@ -329,7 +541,7 @@ describe('App', () => {
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['02108'],
       watchlist: [],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     vi.mocked(api.fetchEnvironment).mockResolvedValueOnce([
       {
@@ -357,13 +569,207 @@ describe('App', () => {
     expect(screen.queryByText(/1970/)).toBeNull();
   });
 
+  it('renders top news stories as links and handles missing URLs as text', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
+      sites: {},
+      news: {
+        cnn: {
+          source: 'cnn',
+          updatedAt: '2026-02-25T18:00:00Z',
+          stories: [
+            { title: 'Story with Link', link: 'https://example.com/has-link', publishedAt: '2026-02-25T17:00:00Z', source: 'cnn' },
+            { title: 'Story without Link', link: '', publishedAt: '2026-02-25T17:05:00Z', source: 'cnn' }
+          ]
+        }
+      },
+      weather: {},
+      localHappenings: {
+        '02108': {
+          location: '02108',
+          sourceAttribution: 'Powered by Ticketmaster',
+          updatedAt: '2026-02-25T12:00:00Z',
+          items: []
+        }
+      }
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Story with Link' })).toBeTruthy());
+    expect(screen.getByRole('link', { name: 'Story with Link' }).getAttribute('href')).toBe('https://example.com/has-link');
+    expect(screen.getByText('Story without Link')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Story without Link' })).toBeNull();
+  });
+
+  it('uses mapped publisher domains for known news sources', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchNewsSourceSettings).mockResolvedValueOnce({
+      availableSources: [{ id: 'fox', name: 'Fox News', type: 'rss', url: 'https://example.org/redirect?url=https://moxie.foxnews.com/google-publisher/latest.xml' }],
+      effectiveSelectedSources: ['fox']
+    });
+    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
+      sites: {},
+      weather: {},
+      localHappenings: {
+        '02108': {
+          location: '02108',
+          sourceAttribution: 'Powered by Ticketmaster',
+          updatedAt: '2026-02-25T12:00:00Z',
+          items: []
+      }
+      },
+      news: {
+        fox: {
+          source: 'fox',
+          updatedAt: '2026-02-25T18:00:00Z',
+          stories: [{ title: 'Top Story', link: 'https://www.foxnews.com/article', publishedAt: '2026-02-25T17:00:00Z', source: 'fox' }]
+        }
+      }
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Fox News source icon' })).toBeTruthy());
+    expect(screen.getByRole('img', { name: 'Fox News source icon' }).getAttribute('src')).toContain(
+      'https://www.google.com/s2/favicons?domain=foxnews.com&sz=32'
+    );
+  });
+
+  it('falls back to the generic source icon when favicon fails to load', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchNewsSourceSettings).mockResolvedValueOnce({
+      availableSources: [{ id: 'cnn', name: 'CNN', type: 'rss', url: 'https://www.cnn.com/rss' }],
+      effectiveSelectedSources: ['cnn']
+    });
+    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
+      sites: {},
+      weather: {},
+      localHappenings: {
+        '02108': {
+          location: '02108',
+          sourceAttribution: 'Powered by Ticketmaster',
+          updatedAt: '2026-02-25T12:00:00Z',
+          items: []
+        }
+      },
+      news: {
+        cnn: {
+          source: 'cnn',
+          updatedAt: '2026-02-25T18:00:00Z',
+          stories: [{ title: 'Story 1', link: 'https://www.cnn.com/story', publishedAt: '2026-02-25T17:00:00Z', source: 'cnn' }]
+        }
+      }
+    });
+
+    render(<App />);
+
+    const headingText = await screen.findByText('CNN');
+    const heading = headingText.closest('h3');
+    expect(heading).toBeTruthy();
+    if (!heading) {
+      throw new Error('News source heading not found');
+    }
+    const favicon = heading.querySelector('img[alt="CNN source icon"]');
+    expect(favicon).toBeTruthy();
+    fireEvent.error(favicon);
+    await waitFor(() => {
+      const fallback = heading.querySelector('span.news-source-icon.news-logo-fallback');
+      expect(fallback).toBeTruthy();
+      expect(fallback?.textContent).toBe('CNN');
+    });
+    expect(heading.querySelector('img[alt="CNN source icon"]')).toBeNull();
+  });
+
+  it('uses fallback icon for unmapped source with no resolvable URL', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchNewsSourceSettings).mockResolvedValueOnce({
+      availableSources: [{ id: 'indie', name: 'Indie Feed', type: 'rss', url: 'not-a-url' }],
+      effectiveSelectedSources: ['indie']
+    });
+    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
+      sites: {},
+      weather: {},
+      localHappenings: {
+        '02108': {
+          location: '02108',
+          sourceAttribution: 'Powered by Ticketmaster',
+          updatedAt: '2026-02-25T12:00:00Z',
+          items: []
+        }
+      },
+      news: {
+        indie: {
+          source: 'indie',
+          updatedAt: '2026-02-25T18:00:00Z',
+          stories: [{ title: 'Story 1', link: 'https://example.com/story', publishedAt: '2026-02-25T17:00:00Z', source: 'indie' }]
+        }
+      }
+    });
+
+    render(<App />);
+    const headingText = await screen.findByText('Indie Feed');
+    const heading = headingText.closest('h3');
+    expect(heading).toBeTruthy();
+    expect(heading?.querySelector('span.news-source-icon.news-logo-fallback')).toBeTruthy();
+    expect(heading?.querySelector('img.news-source-icon')).toBeNull();
+  });
+
+  it('shows clear empty state for news when no stories are available', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchSignals).mockResolvedValueOnce({
+      sites: {},
+      news: {},
+      weather: {},
+      localHappenings: {
+        '02108': {
+          location: '02108',
+          sourceAttribution: 'Powered by Ticketmaster',
+          updatedAt: '2026-02-25T12:00:00Z',
+          items: []
+        }
+      }
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('No news items available from your selected sources.')).toBeTruthy());
+  });
+
+  it('renders market row links to Yahoo Finance', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMarkets).mockResolvedValue({
+      status: 'ok',
+      asOf: '2026-02-25T18:30:00Z',
+      items: [{ symbol: 'BTC-USD', price: 42000.33, change: -2.75, updatedAt: '2026-02-25T18:29:00Z' }]
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'BTC-USD details' })).toBeTruthy());
+    expect(screen.getByRole('link', { name: 'BTC-USD details' }).getAttribute('href')).toBe('https://finance.yahoo.com/quote/BTC-USD');
+  });
+
+  it('shows clear empty state when market symbols list is empty', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMarkets).mockResolvedValue({
+      status: 'ok',
+      asOf: '2026-02-25T18:30:00Z',
+      items: []
+    });
+    localStorage.setItem('signal-sentinel:watchlist', JSON.stringify([]));
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('No market data available right now.')).toBeTruthy());
+  });
+
   it('shows backend ZIP resolution guidance when weather cannot resolve location', async () => {
     const api = await import('./api');
     localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['53201']));
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['53201'],
       watchlist: [],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     vi.mocked(api.fetchEnvironment).mockResolvedValue([
       {
@@ -423,6 +829,18 @@ describe('App', () => {
     const sitesHeading = screen.getByRole('heading', { name: 'Sites (diagnostic)' });
     const eventsHeading = screen.getByRole('heading', { name: 'Live Activity' });
     expect(sitesHeading.compareDocumentPosition(eventsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows friendly unauthorized admin state when admin endpoints return 401', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchAdminTrends).mockRejectedValueOnce(new Error('Admin trends request failed (401)'));
+    vi.mocked(api.fetchAdminEmailPreview).mockRejectedValueOnce(new Error('Admin email preview request failed (401)'));
+    window.location.hash = '#/admin';
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText(/Unauthorized\. Please log in to view admin diagnostics\./)).toBeTruthy());
+    expect(screen.queryByRole('img', { name: 'Collector runs: success' })).toBeNull();
   });
 
   it('hides normal header status and shows warning status when degraded', async () => {
@@ -611,7 +1029,7 @@ describe('App', () => {
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['02108'],
       watchlist: ['AAPL'],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     window.location.hash = '#/settings';
 
@@ -625,7 +1043,7 @@ describe('App', () => {
       expect(api.saveMyPreferences).toHaveBeenLastCalledWith({
         zipCodes: ['02108', '98101'],
         watchlist: ['AAPL'],
-        newsSourceIds: ['cnn', 'wsj']
+        newsSourceIds: ['cnn', 'wsj'], themeMode: 'dark', accent: 'default'
       })
     );
     await waitFor(() => expect(screen.getByText('Saved ✅')).toBeTruthy());
@@ -636,11 +1054,11 @@ describe('App', () => {
     vi.mocked(api.fetchMyPreferences).mockResolvedValueOnce({
       zipCodes: ['02108'],
       watchlist: ['AAPL'],
-      newsSourceIds: []
+      newsSourceIds: [], themeMode: 'dark', accent: 'default'
     });
     vi.mocked(api.saveMyPreferences)
-      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'] })
-      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'] })
+      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'], themeMode: 'dark', accent: 'default' })
+      .mockResolvedValueOnce({ zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn', 'wsj'], themeMode: 'dark', accent: 'default' })
       .mockRejectedValueOnce(new Error('Preferences update failed (401)'));
     window.location.hash = '#/settings';
 

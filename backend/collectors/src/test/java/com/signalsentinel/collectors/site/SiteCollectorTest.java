@@ -90,7 +90,7 @@ class SiteCollectorTest {
 
     @Test
     void parallelFetchesDoNotCorruptState() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         int totalSites = 20;
         int port = server.getAddress().getPort();
 
@@ -176,7 +176,7 @@ class SiteCollectorTest {
 
     @Test
     void timeoutOnOneEndpointDoesNotBlockOthers() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         int port = server.getAddress().getPort();
 
@@ -259,7 +259,7 @@ class SiteCollectorTest {
 
     @Test
     void http500ProducesStatusEventAndCollectorContinues() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         int port = server.getAddress().getPort();
         server.createContext("/ok", exchange -> writeResponse(exchange, 200, "<html><head><title>ok</title></head></html>"));
         server.createContext("/err", exchange -> writeResponse(exchange, 500, "<html><head><title>err</title></head></html>"));
@@ -298,7 +298,7 @@ class SiteCollectorTest {
     }
 
     private void startServer(Handler handler) throws IOException {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/page", exchange -> handler.handle(exchange));
         server.start();
     }

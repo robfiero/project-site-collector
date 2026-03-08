@@ -16,7 +16,6 @@ import com.signalsentinel.collectors.api.CollectorContext;
 import com.signalsentinel.collectors.api.CollectorResult;
 import com.signalsentinel.service.store.EventCodec;
 import com.signalsentinel.service.env.AirNowAqiSnapshot;
-import com.signalsentinel.service.env.EnvService;
 import com.signalsentinel.service.env.NoaaWeatherSnapshot;
 import com.signalsentinel.service.env.ZipGeoRecord;
 import com.signalsentinel.service.env.ZipGeoStore;
@@ -208,7 +207,7 @@ class ApiServerIntegrationTest {
 
     @Test
     void signalsEndpointReturnsWeatherStructureEvenWhenEnvServiceUnavailable() throws Exception {
-        EnvService unavailableEnv = new EnvService(
+        com.signalsentinel.service.env.EnvService unavailableEnv = new com.signalsentinel.service.env.EnvService(
                 new ZipGeoStore(Files.createTempDirectory("signal-sentinel-env-empty-").resolve("zip-geo.json")),
                 zip -> new ZipGeoRecord(zip, 42.0, -71.0, Instant.parse("2026-02-12T20:00:00Z"), "test"),
                 (lat, lon) -> {
@@ -239,6 +238,20 @@ class ApiServerIntegrationTest {
         JsonNode signalsBody = JsonUtils.objectMapper().readTree(signalsResponse.body());
         assertTrue(signalsBody.has("weather"));
         assertTrue(signalsBody.get("weather").isObject());
+    }
+
+    @Test
+    void marketsEndpointReturns501WhenServiceNotConfigured() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/markets?symbols=AAPL")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(501, response.statusCode());
+        assertTrue(response.body().contains("markets_unavailable"));
     }
 
     @Test
@@ -1205,7 +1218,7 @@ class ApiServerIntegrationTest {
             List<Collector> collectors,
             Map<String, Object> defaultsOverride,
             Map<String, Object> configOverride,
-            EnvService envOverride,
+            com.signalsentinel.service.env.EnvService envOverride,
             boolean authEnabled,
             boolean prefsEnabled
     ) throws Exception {
@@ -1237,7 +1250,7 @@ class ApiServerIntegrationTest {
         ));
         config.putAll(configOverride);
         Map<String, Object> sanitizedConfig = sanitizeConfig(config);
-        EnvService envService = envOverride != null ? envOverride : new EnvService(
+        com.signalsentinel.service.env.EnvService envService = envOverride != null ? envOverride : new com.signalsentinel.service.env.EnvService(
                 new ZipGeoStore(tempDir.resolve("data/zip-geo.json")),
                 zip -> new ZipGeoRecord(zip, 42.0, -71.0, Instant.parse("2026-02-12T20:00:00Z"), "tigerweb_zcta"),
                 (lat, lon) -> new NoaaWeatherSnapshot(
@@ -1265,6 +1278,7 @@ class ApiServerIntegrationTest {
                 sanitizedConfig,
                 null,
                 envService,
+                null,
                 authEnabled,
                 prefsEnabled,
                 null

@@ -15,7 +15,14 @@ echo "==> Running backend tests"
 echo "==> Running UI coverage"
 (
   cd "$UI_DIR"
-  npm run test:coverage --silent
+  if [[ -x "node_modules/.bin/vitest" ]]; then
+    node_modules/.bin/vitest run --coverage --silent
+  elif command -v npx >/dev/null 2>&1; then
+    npx --yes vitest run --coverage --silent
+  else
+    echo "UI coverage requires vitest (npm dependency missing). Install dependencies with: cd ui && npm install"
+    exit 1
+  fi
 )
 
 backend_module_summary() {

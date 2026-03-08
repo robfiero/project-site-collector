@@ -289,6 +289,8 @@ Run combined backend + UI baseline:
 - Authenticated users get:
   - Settings route in nav
   - server-side preferences via `/api/me/preferences`
+  - persisted UI preferences in `/api/me/preferences`: `themeMode` and `accent`
+  - scoped settings reset via `/api/settings/reset` with `scope=ui|collectors|all`
   - account menu with sign-out
 - Auth/session:
   - JWT in HttpOnly cookie
