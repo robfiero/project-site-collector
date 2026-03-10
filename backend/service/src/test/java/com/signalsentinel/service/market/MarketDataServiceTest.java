@@ -121,6 +121,38 @@ class MarketDataServiceTest {
     }
 
     @Test
+    void quote401FallsBackToChartEndpointForCaretSymbol() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/v7/finance/quote", exchange -> writeResponse(exchange, 401, "{\"error\":\"unauthorized\"}"));
+        server.createContext("/v8/finance/chart", exchange -> {
+            assertTrue(exchange.getRequestURI().getPath().contains("GSPC"));
+            writeResponse(exchange, 200, """
+                    {"chart":{"result":[{"meta":{
+                      "symbol":"^GSPC",
+                      "regularMarketPrice":5050.10,
+                      "chartPreviousClose":5030.00,
+                      "regularMarketTime":1772003000
+                    }}]}}
+                    """);
+        });
+        server.start();
+
+        MarketDataService service = new MarketDataService(
+                HttpClient.newHttpClient(),
+                "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
+                Duration.ofSeconds(2),
+                Clock.fixed(Instant.parse("2026-02-25T18:00:00Z"), ZoneOffset.UTC),
+                Duration.ofMinutes(15)
+        );
+
+        MarketDataService.MarketSnapshot result = service.fetch(List.of("^GSPC"));
+        assertEquals("ok", result.status());
+        assertEquals(1, result.items().size());
+        assertEquals("^GSPC", result.items().getFirst().symbol());
+        assertEquals(20.10, result.items().getFirst().change(), 0.001);
+    }
+
+    @Test
     void cachedSnapshotServedAsStaleWhenUpstreamFails() throws Exception {
         AtomicInteger counter = new AtomicInteger();
         server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);

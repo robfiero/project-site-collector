@@ -203,6 +203,7 @@ public class ApiServer {
             server.createContext("/api/auth/forgot", this::handleForgotPassword);
             server.createContext("/api/auth/reset", this::handleResetPassword);
             server.createContext("/api/me", this::handleMe);
+            server.createContext("/api/me/delete", this::handleAccountDelete);
             server.createContext("/api/me/preferences", this::handlePreferences);
             server.createContext("/api/dev/outbox", this::handleDevOutbox);
             server.createContext("/api/stream", sseBroadcaster::handle);
@@ -233,7 +234,34 @@ public class ApiServer {
         if (!ensureGet(exchange, true)) {
             return;
         }
-        writeJson(exchange, 200, Map.of("status", "ok"));
+        writeJson(exchange, 200, Map.of(
+                "status", "ok",
+                "version", com.signalsentinel.service.VersionInfo.version(),
+                "buildTime", com.signalsentinel.service.VersionInfo.buildTime(),
+                "gitSha", com.signalsentinel.service.VersionInfo.gitSha()
+        ));
+    }
+
+    private void handleAccountDelete(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        if (authService == null) {
+            writeJson(exchange, 404, Map.of("error", "auth_disabled"));
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
+            writeJson(exchange, 401, Map.of("error", "unauthorized"));
+            return;
+        }
+        boolean deleted = authService.deleteAccount(user.get().id());
+        if (!deleted) {
+            writeJson(exchange, 404, Map.of("error", "not_found"));
+            return;
+        }
+        writeJson(exchange, 200, Map.of("status", "deleted"));
     }
 
     private void handleSignals(HttpExchange exchange) throws IOException {
@@ -539,7 +567,7 @@ public class ApiServer {
         int totalIncluded = siteCount + newsStoryCount + localEventsCount + weatherCount + marketsCount;
 
         Instant now = Instant.now();
-        String subject = "Signal Sentinel Digest Preview - " + now.toString().substring(0, 10);
+        String subject = "Today's Overview Digest Preview - " + now.toString().substring(0, 10);
         String body = "";
         if (totalIncluded > 0) {
             List<String> lines = List.of(
@@ -809,25 +837,7 @@ public class ApiServer {
     }
 
     private List<String> parseSymbolQuery(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
-        String[] tokens = raw.split(",");
-        if (tokens.length > 100) {
-            throw new IllegalArgumentException("Too many symbols requested");
-        }
-        LinkedHashSet<String> values = new LinkedHashSet<>();
-        for (String token : tokens) {
-            String value = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
-            if (value.isBlank()) {
-                continue;
-            }
-            if (!value.matches("[A-Z0-9._\\-]{1,16}")) {
-                throw new IllegalArgumentException("Invalid symbol: " + value);
-            }
-            values.add(value);
-        }
-        return new ArrayList<>(values);
+        return MarketSymbolParser.parse(raw);
     }
 
     private List<String> defaultWatchlist() {

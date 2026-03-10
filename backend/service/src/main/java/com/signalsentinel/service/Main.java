@@ -38,6 +38,8 @@ import com.signalsentinel.service.store.EventCodec;
 import com.signalsentinel.service.store.JsonFileSignalStore;
 import com.signalsentinel.service.store.JsonlEventStore;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -60,7 +62,8 @@ public final class Main {
         Path configDir = Path.of("config");
         Path stateFile = Path.of("state/signals.json");
         Path eventLogFile = Path.of("logs/events.jsonl");
-        Path dataDir = Path.of("data");
+        // DATA_DIR controls where user accounts and preferences are persisted across restarts/redeploys.
+        Path dataDir = resolveDataDir(System.getenv(), LOGGER);
         RuntimeFlags runtimeFlags = resolveRuntimeFlags(System.getenv(), LOGGER::warning);
         boolean devMode = runtimeFlags.devMode();
         boolean authEnabled = runtimeFlags.authEnabled();
@@ -165,7 +168,8 @@ public final class Main {
         Map<String, Object> configView = Map.of(
                 "collectors", collectorConfigs,
                 "sites", siteConfig,
-                "rss", rssConfig
+                "rss", rssConfig,
+                "dataDir", dataDir.toString()
         );
         Map<String, Object> catalogDefaults = CatalogDefaults.defaults();
         List<String> defaultZips = castToStringList(catalogDefaults.get("defaultZipCodes"));
@@ -250,6 +254,25 @@ public final class Main {
     static PasswordHasher selectPasswordHasher(boolean devMode, boolean allowInsecureAuthHasher) {
         PasswordHasher argon2 = PasswordHasher.defaultHasher();
         return selectPasswordHasher(argon2, devMode, allowInsecureAuthHasher);
+    }
+
+    static Path resolveDataDir(Map<String, String> env, Logger logger) {
+        String dataDirRaw = env.get("DATA_DIR");
+        String dataDirValue = (dataDirRaw == null || dataDirRaw.isBlank()) ? "data" : dataDirRaw.trim();
+        Path dataDir = Path.of(dataDirValue).toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(dataDir);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to create DATA_DIR at " + dataDir, e);
+        }
+        if (!Files.isDirectory(dataDir)) {
+            throw new IllegalStateException("DATA_DIR is not a directory: " + dataDir);
+        }
+        if (!Files.isWritable(dataDir)) {
+            throw new IllegalStateException("DATA_DIR is not writable: " + dataDir);
+        }
+        logger.info("Using data directory " + dataDir);
+        return dataDir;
     }
 
     static PasswordHasher selectPasswordHasher(PasswordHasher argon2, boolean devMode, boolean allowInsecureAuthHasher) {

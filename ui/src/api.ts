@@ -11,6 +11,9 @@ import type {
 
 export interface HealthResponse {
   status: string;
+  version?: string;
+  buildTime?: string;
+  gitSha?: string;
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -204,6 +207,13 @@ export async function logout(): Promise<void> {
   const response = await fetch('/api/auth/logout', { method: 'POST' });
   if (!response.ok) {
     await throwApiError(response, `Logout failed (${response.status})`);
+  }
+}
+
+export async function deleteMyAccount(): Promise<void> {
+  const response = await fetch('/api/me/delete', { method: 'POST' });
+  if (!response.ok) {
+    await throwApiError(response, `Account deletion failed (${response.status})`);
   }
 }
 

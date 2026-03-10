@@ -46,6 +46,7 @@ type AdminDashboardProps = {
   emailPreview: AdminEmailPreview;
   emailPreviewLoading: boolean;
   emailPreviewError: string | null;
+  versionInfo: { version?: string; buildTime?: string; gitSha?: string };
 };
 
 export default function AdminDashboard(props: AdminDashboardProps) {
@@ -114,6 +115,14 @@ export default function AdminDashboard(props: AdminDashboardProps) {
         ) : (
           <span className="admin-context-value">Anonymous session</span>
         )}
+      </section>
+      <section className="admin-context-strip">
+        <span className="admin-context-label">Version</span>
+        <span className="admin-context-value">
+          {props.versionInfo.version ?? 'Unknown'}
+          {props.versionInfo.buildTime ? ` · ${props.versionInfo.buildTime}` : ''}
+          {props.versionInfo.gitSha ? ` · ${props.versionInfo.gitSha}` : ''}
+        </span>
       </section>
 
       <section className="card admin-trends">

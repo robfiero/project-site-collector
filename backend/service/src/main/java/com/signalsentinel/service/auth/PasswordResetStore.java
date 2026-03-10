@@ -49,6 +49,18 @@ public final class PasswordResetStore {
         }
     }
 
+    public int deleteForUser(String userId) {
+        synchronized (lock) {
+            List<PasswordResetTokenRecord> values = load();
+            int before = values.size();
+            values.removeIf(record -> record.userId().equals(userId));
+            if (values.size() != before) {
+                FileStoreSupport.writeListAtomically(path, values);
+            }
+            return before - values.size();
+        }
+    }
+
     private List<PasswordResetTokenRecord> load() {
         return FileStoreSupport.readList(path, TYPE);
     }

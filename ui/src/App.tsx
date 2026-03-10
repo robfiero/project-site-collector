@@ -10,6 +10,7 @@ import {
   fetchEnvironment,
   fetchEvents,
   fetchHealth,
+  deleteMyAccount,
   fetchMarkets,
   fetchMe,
   fetchMetrics,
@@ -38,6 +39,7 @@ import nytLogo from './assets/news-logos/nyt.svg';
 import vergeLogo from './assets/news-logos/verge.svg';
 import wsjLogo from './assets/news-logos/wsj.svg';
 import AdminDashboard from './admin/AdminDashboard';
+import AboutPage from './about/AboutPage';
 import type {
   CatalogDefaults,
   CollectorStatus,
@@ -58,8 +60,8 @@ const MAX_WATCHLIST = 25;
 const FALLBACK_DEFAULT_ZIPS = ['02108', '98101'];
 const FALLBACK_DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
 const FALLBACK_DEFAULT_NEWS_SOURCES = ['cnn', 'wsj', 'verge'];
-const DEFAULT_THEME_MODE = 'dark';
-const DEFAULT_ACCENT = 'default';
+const DEFAULT_THEME_MODE = 'light';
+const DEFAULT_ACCENT = 'blue';
 const AUTH_TRANSITION_COLLECTORS = ['envCollector', 'rssCollector', 'localEventsCollector'];
 const INTENDED_ROUTE_KEY = 'todays-overview:intended-route';
 const NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_ID: Record<string, string> = {
@@ -124,7 +126,7 @@ const NEWS_LOGO_BY_SOURCE_ID: Record<string, { src: string; alt: string }> = {
   npr_morning_edition: { src: nprLogo, alt: 'NPR logo' }
 };
 
-type RouteName = 'home' | 'settings' | 'admin' | 'login' | 'signup' | 'forgot' | 'reset';
+type RouteName = 'home' | 'settings' | 'admin' | 'auth' | 'about' | 'forgot' | 'reset';
 type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
 type ThemeMode = 'light' | 'dark';
 type Accent = 'default' | 'gold' | 'blue' | 'green';
@@ -173,6 +175,8 @@ export default function App() {
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
   const [devOutbox, setDevOutbox] = useState<DevOutboxEmail[]>([]);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [versionInfo, setVersionInfo] = useState<{ version?: string; buildTime?: string; gitSha?: string }>({});
   const [settingsSaveState, setSettingsSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [marketsSnapshot, setMarketsSnapshot] = useState<MarketsSnapshot>(emptyMarketsSnapshot);
   const [marketsLoading, setMarketsLoading] = useState<boolean>(false);
@@ -200,6 +204,18 @@ export default function App() {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+
+  useEffect(() => {
+    if (route !== 'auth') {
+      return;
+    }
+    const hash = window.location.hash;
+    if (hash === '#/signup' || hash.includes('mode=signup')) {
+      setAuthMode('signup');
+    } else {
+      setAuthMode('login');
+    }
+  }, [route]);
 
   useEffect(() => {
     if (authUser) {
@@ -238,6 +254,11 @@ export default function App() {
           fetchDevOutbox(),
           fetchNewsSourceSettings()
         ]);
+        setVersionInfo({
+          version: healthResponse.version,
+          buildTime: healthResponse.buildTime,
+          gitSha: healthResponse.gitSha
+        });
         if (!mounted) {
           return;
         }
@@ -368,7 +389,7 @@ export default function App() {
   useEffect(() => {
     if (authResolved && route === 'settings' && !authUser) {
       storeIntendedRoute('#/settings');
-      window.location.hash = '#/login';
+      window.location.hash = '#/auth?mode=login';
     }
   }, [authResolved, route, authUser]);
 
@@ -775,8 +796,8 @@ export default function App() {
                 <a href="#/" className={route === 'home' ? 'active' : ''}>Home</a>
                 {authUser && <a href="#/settings" className={route === 'settings' ? 'active' : ''}>⚙ Settings</a>}
                 <a href="#/admin" className={route === 'admin' ? 'active' : ''}>Admin / Diagnostics</a>
-                {!authUser && <a href="#/login" className={route === 'login' ? 'active' : ''}>Login</a>}
-                {!authUser && <a href="#/signup" className={route === 'signup' ? 'active' : ''}>Sign up</a>}
+                <a href="#/about" className={route === 'about' ? 'active' : ''}>About</a>
+                {!authUser && <a href="#/auth" className={route === 'auth' ? 'active' : ''}>Sign in</a>}
                 {authUser && <button type="button" onClick={doSignOut}>Sign out</button>}
               </nav>
             </div>
@@ -857,6 +878,26 @@ export default function App() {
             onAccentChange={setAccent}
             onResetUiPreferences={resetUiPreferences}
             onResetCollectorDefaults={resetCollectorDefaults}
+            onDeleteAccount={async () => {
+              try {
+                await deleteMyAccount();
+                setAuthUser(null);
+                setSessionExpired(false);
+                setAuthMessage(null);
+                setZipCodes(loadZipCodes());
+                setWatchlist(loadWatchlist());
+                setSelectedNewsSourceIds(catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES);
+                setThemeMode(DEFAULT_THEME_MODE);
+                setAccent(DEFAULT_ACCENT);
+                window.location.hash = '#/';
+                return 'ok';
+              } catch (error) {
+                if (isUnauthorizedError(error)) {
+                  handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+                }
+                return 'error';
+              }
+            }}
           />
           ) : authResolved ? (
             <AuthPage
@@ -865,51 +906,49 @@ export default function App() {
               submitLabel="Go to Login"
               fields={[]}
               onSubmit={async () => {
-                window.location.hash = '#/login';
+                window.location.hash = '#/auth?mode=login';
               }}
             />
           ) : (
             <main className="settings-page"><section className="card"><p className="meta">Loading account...</p></section></main>
           )
-        ) : route === 'login' ? (
-          <AuthPage
-            title="Login"
-            description="Sign in to save your settings server-side."
-            submitLabel="Login"
-            fields={[
-              { key: 'email', label: 'Email', type: 'email' },
-              { key: 'password', label: 'Password', type: 'password' }
-            ]}
-            onSubmit={async (values) => {
+        ) : route === 'auth' ? (
+          <UnifiedAuthPage
+            mode={authMode}
+            authMessage={authMessage}
+            onModeChange={(mode) => {
+              setAuthMode(mode);
+              setAuthMessage(null);
+              window.location.hash = `#/auth?mode=${mode}`;
+            }}
+            onLogin={async (values) => {
               const user = await login(values.email, values.password);
               setAuthUser(user);
               setSessionExpired(false);
               setAuthMessage(null);
-              const prefs = await fetchMyPreferences();
-              setZipCodes(prefs.zipCodes);
-              setWatchlist(prefs.watchlist);
-              setSelectedNewsSourceIds(
-                prefs.newsSourceIds.length > 0
-                  ? prefs.newsSourceIds
-                  : (catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES)
-              );
-              setThemeMode(prefs.themeMode);
-              setAccent(prefs.accent);
-              await refreshAfterAuthTransition(prefs.zipCodes);
-              window.location.hash = consumeIntendedRoute();
+              const destination = consumeIntendedRoute();
+              window.location.hash = destination;
+              void (async () => {
+                try {
+                  const prefs = await fetchMyPreferences();
+                  setZipCodes(prefs.zipCodes);
+                  setWatchlist(prefs.watchlist);
+                  setSelectedNewsSourceIds(
+                    prefs.newsSourceIds.length > 0
+                      ? prefs.newsSourceIds
+                      : (catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES)
+                  );
+                  setThemeMode(prefs.themeMode);
+                  setAccent(prefs.accent);
+                  await refreshAfterAuthTransition(prefs.zipCodes);
+                } catch (error) {
+                  if (isUnauthorizedError(error)) {
+                    handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+                  }
+                }
+              })();
             }}
-          />
-        ) : route === 'signup' ? (
-          <AuthPage
-            title="Sign up"
-            description="Create an account to personalize your dashboard."
-            submitLabel="Create account"
-            passwordRequirement="Password must be at least 8 characters."
-            fields={[
-              { key: 'email', label: 'Email', type: 'email' },
-              { key: 'password', label: 'Password', type: 'password' }
-            ]}
-            onSubmit={async (values) => {
+            onSignup={async (values) => {
               const user = await signup(values.email, values.password);
               setAuthUser(user);
               setSessionExpired(false);
@@ -917,6 +956,8 @@ export default function App() {
               window.location.hash = consumeIntendedRoute();
             }}
           />
+        ) : route === 'about' ? (
+          <AboutPage />
         ) : route === 'forgot' ? (
           <AuthPage
             title="Forgot password"
@@ -941,7 +982,7 @@ export default function App() {
               }
               await resetPassword(token, values.password);
               setAuthMessage('Password reset complete. You can now log in.');
-              window.location.hash = '#/login';
+              window.location.hash = '#/auth?mode=login';
             }}
           />
         ) : (
@@ -973,9 +1014,15 @@ export default function App() {
             emailPreview={adminEmailPreview}
             emailPreviewLoading={adminEmailLoading}
             emailPreviewError={adminEmailError}
+            versionInfo={versionInfo}
           />
         )}
       </div>
+      <footer className="app-footer">
+        <div className="app-container">
+          <p className="meta">Today&apos;s Overview • v{versionInfo.version ?? 'dev'}</p>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -1225,6 +1272,7 @@ type SettingsPageProps = {
   onAccentChange: (value: Accent) => void;
   onResetUiPreferences: () => Promise<'ok' | 'error'>;
   onResetCollectorDefaults: () => Promise<'ok' | 'error'>;
+  onDeleteAccount: () => Promise<'ok' | 'error'>;
 };
 
 function SettingsPage(props: SettingsPageProps) {
@@ -1235,6 +1283,7 @@ function SettingsPage(props: SettingsPageProps) {
   const [zipHint, setZipHint] = useState<string>('');
   const [symbolHint, setSymbolHint] = useState<string>('');
   const [resetHint, setResetHint] = useState<string>('');
+  const [deleteHint, setDeleteHint] = useState<string>('');
   const [draggingZip, setDraggingZip] = useState<string | null>(null);
   const [draggingSymbol, setDraggingSymbol] = useState<string | null>(null);
   const uiResetPrompt = 'Reset UI preferences only?';
@@ -1487,6 +1536,25 @@ function SettingsPage(props: SettingsPageProps) {
           </div>
         </section>
       </section>
+      <section className="card">
+        <h2>Account</h2>
+        <p className="meta">Delete your account and remove stored preferences for this user.</p>
+        <div className="settings-actions">
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm('Delete your account? This cannot be undone.')) {
+                return;
+              }
+              const result = await props.onDeleteAccount();
+              setDeleteHint(result === 'ok' ? 'Account deleted. You are signed out.' : 'Account deletion failed');
+            }}
+          >
+            Delete account
+          </button>
+          {deleteHint && <p className="meta inline-hint">{deleteHint}</p>}
+        </div>
+      </section>
       <section className="card danger-zone">
         <h2>Danger zone</h2>
         <p className="meta">Run scoped reset actions to avoid unintentional settings changes.</p>
@@ -1538,7 +1606,17 @@ type AuthPageProps = {
   submitLabel: string;
   fields: AuthField[];
   passwordRequirement?: string;
+  embedded?: boolean;
+  showForgot?: boolean;
   onSubmit: (values: Record<'email' | 'password', string>) => Promise<void>;
+};
+
+type UnifiedAuthPageProps = {
+  mode: 'login' | 'signup';
+  authMessage: string | null;
+  onModeChange: (mode: 'login' | 'signup') => void;
+  onLogin: (values: Record<'email' | 'password', string>) => Promise<void>;
+  onSignup: (values: Record<'email' | 'password', string>) => Promise<void>;
 };
 
 function AuthPage(props: AuthPageProps) {
@@ -1552,59 +1630,148 @@ function AuthPage(props: AuthPageProps) {
   const passwordError = passwordTooShort ? props.passwordRequirement : null;
   const passwordHelper = passwordError ?? props.passwordRequirement ?? null;
   const disableSubmit = pending || (requiresMinPassword && hasPasswordField && password.length < 8);
+  const pendingLabel = props.submitLabel === 'Sign in'
+    ? 'Signing in...'
+    : props.submitLabel === 'Create account'
+      ? 'Creating account...'
+      : props.submitLabel === 'Send reset link'
+        ? 'Sending link...'
+        : props.submitLabel === 'Reset password'
+          ? 'Resetting password...'
+          : 'Working...';
+
+  const errorMessage = message;
+  const content = (
+    <>
+      {props.title ? <h2>{props.title}</h2> : null}
+      {props.description ? <p className="meta">{props.description}</p> : null}
+      <form
+        className="auth-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setPending(true);
+          setMessage(null);
+          try {
+            await props.onSubmit({ email, password });
+          } catch (error) {
+            setMessage(formatAuthError(error));
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        {props.fields.some((field) => field.key === 'email') && (
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (message) {
+                  setMessage(null);
+                }
+              }}
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+        )}
+        {props.fields.some((field) => field.key === 'password') && (
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (message) {
+                  setMessage(null);
+                }
+              }}
+              placeholder="********"
+              required
+            />
+            {passwordHelper && <p className={passwordError ? 'meta inline-hint' : 'meta'}>{passwordHelper}</p>}
+          </label>
+        )}
+        <button type="submit" className={`auth-submit${pending ? ' is-pending' : ''}`} disabled={disableSubmit}>
+          {pending ? (
+            <>
+              <span className="auth-spinner" aria-hidden="true" />
+              <span>{pendingLabel}</span>
+            </>
+          ) : (
+            props.submitLabel
+          )}
+        </button>
+      </form>
+      {errorMessage ? <div className="auth-error" role="alert">{errorMessage}</div> : null}
+      {props.showForgot ? (
+        <p className="meta auth-links">
+          <a href="#/forgot">Forgot password?</a>
+        </p>
+      ) : null}
+    </>
+  );
+
+  if (props.embedded) {
+    return <>{content}</>;
+  }
 
   return (
     <main className="settings-page">
       <section className="card controls">
-        <h2>{props.title}</h2>
-        <p className="meta">{props.description}</p>
-        <form
-          className="auth-form"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setPending(true);
-            setMessage(null);
-            try {
-              await props.onSubmit({ email, password });
-              setMessage('Success');
-            } catch (error) {
-              setMessage(formatAuthError(error));
-            } finally {
-              setPending(false);
-            }
-          }}
-        >
-          {props.fields.some((field) => field.key === 'email') && (
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-              />
-            </label>
-          )}
-          {props.fields.some((field) => field.key === 'password') && (
-            <label>
-              Password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="********"
-                required
-              />
-              {passwordHelper && <p className={passwordError ? 'meta inline-hint' : 'meta'}>{passwordHelper}</p>}
-            </label>
-          )}
-          <button type="submit" disabled={disableSubmit}>{pending ? 'Working...' : props.submitLabel}</button>
-        </form>
-        {message && <p className="meta">{message}</p>}
-        <p className="meta auth-links">
-          <a href="#/forgot">Forgot password?</a>
-        </p>
+        {content}
+      </section>
+    </main>
+  );
+}
+
+function UnifiedAuthPage(props: UnifiedAuthPageProps) {
+  const isSignup = props.mode === 'signup';
+  const description = isSignup
+    ? 'Create an account to save your dashboard settings.'
+    : 'Sign in to save your settings and sync preferences.';
+  const submitLabel = isSignup ? 'Create account' : 'Sign in';
+  const onSubmit = isSignup ? props.onSignup : props.onLogin;
+
+  return (
+    <main className="settings-page">
+      <section className="card controls">
+        <h2>{isSignup ? 'Create account' : 'Sign in'}</h2>
+        <p className="meta">{description}</p>
+        <div className="nav auth-toggle">
+          <button
+            type="button"
+            className={props.mode === 'login' ? 'active' : ''}
+            onClick={() => props.onModeChange('login')}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className={props.mode === 'signup' ? 'active' : ''}
+            onClick={() => props.onModeChange('signup')}
+          >
+            Create account
+          </button>
+        </div>
+        <AuthPage
+          key={props.mode}
+          embedded
+          title=""
+          description=""
+          submitLabel={submitLabel}
+          passwordRequirement={isSignup ? 'Password must be at least 8 characters.' : undefined}
+          showForgot={!isSignup}
+          fields={[
+            { key: 'email', label: 'Email', type: 'email' },
+            { key: 'password', label: 'Password', type: 'password' }
+          ]}
+          onSubmit={onSubmit}
+        />
+        {props.authMessage && <p className="meta">{props.authMessage}</p>}
       </section>
     </main>
   );
@@ -1824,11 +1991,8 @@ function filterDisplayableHappeningItems(items: LocalHappeningsSignal['items']):
 }
 
 function readRouteFromHash(): RouteName {
-  if (window.location.hash === '#/login') {
-    return 'login';
-  }
-  if (window.location.hash === '#/signup') {
-    return 'signup';
+  if (window.location.hash.startsWith('#/auth') || window.location.hash === '#/login' || window.location.hash === '#/signup') {
+    return 'auth';
   }
   if (window.location.hash.startsWith('#/reset')) {
     return 'reset';
@@ -1838,6 +2002,9 @@ function readRouteFromHash(): RouteName {
   }
   if (window.location.hash === '#/admin') {
     return 'admin';
+  }
+  if (window.location.hash === '#/about') {
+    return 'about';
   }
   if (window.location.hash === '#/settings') {
     return 'settings';

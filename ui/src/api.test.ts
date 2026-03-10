@@ -14,6 +14,7 @@ import {
   fetchSignals,
   login,
   logout,
+  deleteMyAccount,
   resetSettings,
   resetPassword,
   signup,
@@ -27,13 +28,13 @@ describe('basic fetch wrappers', () => {
 
   it('fetchHealth success returns parsed JSON', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: 'ok' }), {
+      new Response(JSON.stringify({ status: 'ok', version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       })
     );
 
-    await expect(fetchHealth()).resolves.toEqual({ status: 'ok' });
+    await expect(fetchHealth()).resolves.toEqual({ status: 'ok', version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' });
   });
 
   it('fetchHealth non-ok throws status error', async () => {
@@ -208,7 +209,7 @@ describe('resetSettings', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify({
         scopeApplied: 'collectors',
-        preferences: { zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn'], themeMode: 'dark', accent: 'default' }
+        preferences: { zipCodes: ['02108'], watchlist: ['AAPL'], newsSourceIds: ['cnn'], themeMode: 'light', accent: 'blue' }
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
@@ -408,6 +409,28 @@ describe('fetchMe', () => {
     );
 
     await expect(fetchMe()).resolves.toEqual({ id: 'u1', email: 'u@example.com' });
+  });
+});
+
+describe('deleteMyAccount', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('posts to /api/me/delete', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 200 }));
+    await expect(deleteMyAccount()).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/me/delete', { method: 'POST' });
+  });
+
+  it('throws on failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'cannot delete' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+    await expect(deleteMyAccount()).rejects.toMatchObject({ message: 'cannot delete', status: 400 });
   });
 });
 

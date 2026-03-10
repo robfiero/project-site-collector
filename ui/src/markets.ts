@@ -8,6 +8,8 @@ const SYMBOL_LABELS: Record<string, string> = {
   MSFT: 'Microsoft Corporation',
   NVDA: 'NVIDIA Corporation',
   ORCL: 'Oracle Corporation',
+  '^GSPC': 'S&P 500',
+  SPX: 'S&P 500',
   SPY: 'SPDR S&P 500 ETF Trust',
   TSLA: 'Tesla, Inc.'
 };

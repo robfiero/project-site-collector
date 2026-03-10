@@ -97,6 +97,39 @@ class AuthApiIntegrationTest {
     }
 
     @Test
+    void accountDeleteRemovesUserAndPreferences() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "delete@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, signup.statusCode());
+        String authCookie = cookieFrom(signup);
+
+        HttpResponse<String> delete = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me/delete"))
+                        .header("Cookie", authCookie)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, delete.statusCode());
+        assertTrue(runtime.userStore().findByEmail("delete@example.com").isEmpty());
+        assertTrue(runtime.preferencesStore().all().isEmpty());
+
+        HttpResponse<String> me = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me"))
+                        .header("Cookie", authCookie)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertTrue(me.statusCode() == 401 || me.statusCode() == 404);
+    }
+
+    @Test
     void forgotAlwaysReturnsOkButOnlyKnownUserCreatesOutboxMessage() throws Exception {
         TestRuntime runtime = startRuntime(true);
         HttpClient client = HttpClient.newHttpClient();
@@ -258,8 +291,8 @@ class AuthApiIntegrationTest {
 
         assertEquals(200, put.statusCode());
         JsonNode body = JsonUtils.objectMapper().readTree(put.body());
-        assertEquals("dark", body.get("themeMode").asText());
-        assertEquals("default", body.get("accent").asText());
+        assertEquals("light", body.get("themeMode").asText());
+        assertEquals("blue", body.get("accent").asText());
     }
 
     @Test
@@ -343,8 +376,8 @@ class AuthApiIntegrationTest {
         assertEquals("60601", resetBody.get("preferences").get("zipCodes").get(0).asText());
         assertEquals("TSLA", resetBody.get("preferences").get("watchlist").get(0).asText());
         assertEquals("wsj", resetBody.get("preferences").get("newsSourceIds").get(0).asText());
-        assertEquals("dark", resetBody.get("preferences").get("themeMode").asText());
-        assertEquals("default", resetBody.get("preferences").get("accent").asText());
+        assertEquals("light", resetBody.get("preferences").get("themeMode").asText());
+        assertEquals("blue", resetBody.get("preferences").get("accent").asText());
     }
 
     @Test
@@ -429,8 +462,8 @@ class AuthApiIntegrationTest {
         assertEquals("all", resetBody.get("scopeApplied").asText());
         assertTrue(resetBody.get("preferences").get("zipCodes").isArray());
         assertEquals("02108", resetBody.get("preferences").get("zipCodes").get(0).asText());
-        assertEquals("dark", resetBody.get("preferences").get("themeMode").asText());
-        assertEquals("default", resetBody.get("preferences").get("accent").asText());
+        assertEquals("light", resetBody.get("preferences").get("themeMode").asText());
+        assertEquals("blue", resetBody.get("preferences").get("accent").asText());
     }
 
     @Test
@@ -752,7 +785,7 @@ class AuthApiIntegrationTest {
         assertEquals("dev_outbox", body.get("mode").asText());
         assertEquals(2, body.get("includedCounts").get("newsStories").asInt());
         assertEquals(1, body.get("includedCounts").get("localEvents").asInt());
-        assertTrue(body.get("subject").asText().contains("Signal Sentinel Digest Preview"));
+        assertTrue(body.get("subject").asText().contains("Today's Overview Digest Preview"));
         assertTrue(body.get("body").asText().contains("News stories included: 2"));
         assertEquals("", body.get("lastSentAt").asText());
         assertEquals("", body.get("lastError").asText());
@@ -862,7 +895,7 @@ class AuthApiIntegrationTest {
         AtomicInteger refreshCount = new AtomicInteger();
         apiServer.setCollectorRefreshHook(collectors -> refreshCount.incrementAndGet());
         apiServer.start();
-        return new TestRuntime(apiServer.actualPort(), userStore, passwordResetStore, signalStore, refreshCount, eventBus);
+        return new TestRuntime(apiServer.actualPort(), userStore, passwordResetStore, preferencesStore, signalStore, refreshCount, eventBus);
     }
 
     private static void waitForRefreshCount(AtomicInteger counter, int expectedAtLeast) throws InterruptedException {
@@ -900,6 +933,7 @@ class AuthApiIntegrationTest {
             int port,
             UserStore userStore,
             PasswordResetStore passwordResetStore,
+            PreferencesStore preferencesStore,
             JsonFileSignalStore signalStore,
             AtomicInteger refreshCount,
             EventBus eventBus

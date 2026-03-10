@@ -29,7 +29,7 @@ const defaultEmailPreview: AdminEmailPreview = {
   lastSentAt: null,
   lastError: null,
   generatedAt: '2026-02-25T20:00:00Z',
-  subject: 'Signal Sentinel Digest Preview - 2026-02-25',
+  subject: "Today's Overview Digest Preview - 2026-02-25",
   body: 'Digest preview generated',
   includedCounts: {
     sites: 1,
@@ -77,6 +77,7 @@ function renderDashboard(overrides?: Partial<ComponentProps<typeof AdminDashboar
       emailPreview={defaultEmailPreview}
       emailPreviewLoading={false}
       emailPreviewError={null}
+      versionInfo={{ version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' }}
       {...overrides}
     />
   );

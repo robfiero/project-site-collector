@@ -46,6 +46,19 @@ public final class PreferencesStore {
         }
     }
 
+    public boolean deleteForUser(String userId) {
+        synchronized (lock) {
+            List<UserPreferences> list = load();
+            int existing = indexOf(list, userId);
+            if (existing < 0) {
+                return false;
+            }
+            list.remove(existing);
+            FileStoreSupport.writeListAtomically(path, list);
+            return true;
+        }
+    }
+
     private int indexOf(List<UserPreferences> list, String userId) {
         for (int i = 0; i < list.size(); i++) {
             if (list.get(i).userId().equals(userId)) {

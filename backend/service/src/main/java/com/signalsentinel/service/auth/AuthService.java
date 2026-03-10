@@ -199,6 +199,19 @@ public final class AuthService {
         eventBus.publish(new PasswordResetSucceeded(clock.instant(), user.id(), user.email()));
     }
 
+    public boolean deleteAccount(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return false;
+        }
+        boolean deleted = userStore.deleteById(userId);
+        if (!deleted) {
+            return false;
+        }
+        preferencesStore.deleteForUser(userId);
+        passwordResetStore.deleteForUser(userId);
+        return true;
+    }
+
     private static String normalizeEmail(String value) {
         if (value == null) {
             throw new IllegalArgumentException("Email is required");

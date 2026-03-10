@@ -53,6 +53,19 @@ public final class UserStore {
         }
     }
 
+    public boolean deleteById(String id) {
+        synchronized (lock) {
+            List<AuthUser> users = load();
+            int index = indexOf(users, id);
+            if (index < 0) {
+                return false;
+            }
+            users.remove(index);
+            FileStoreSupport.writeListAtomically(path, users);
+            return true;
+        }
+    }
+
     private int indexOf(List<AuthUser> users, String id) {
         for (int i = 0; i < users.size(); i++) {
             if (users.get(i).id().equals(id)) {
