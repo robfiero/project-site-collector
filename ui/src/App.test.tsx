@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
@@ -176,45 +176,16 @@ describe('App', () => {
     expect(screen.getByText('Enter a symbol (e.g., NVDA)')).toBeTruthy();
   });
 
-  it('prevents duplicates and supports scoped danger-zone reset actions', async () => {
-    const api = await import('./api');
-    localStorage.setItem('signal-sentinel:zip-codes', JSON.stringify(['02108']));
-    localStorage.setItem('signal-sentinel:watchlist', JSON.stringify(['AAPL']));
-    window.location.hash = '#/settings';
-    render(<App />);
-
-    const zipInput = await screen.findByPlaceholderText('ZIP (e.g., 02108)');
-    fireEvent.change(zipInput, { target: { value: '02108' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add ZIP' }));
-    expect(screen.getAllByText('Boston, MA (02108)').length).toBe(1);
-
-    const symbolInput = screen.getByPlaceholderText('Symbol (e.g., NVDA)');
-    fireEvent.change(symbolInput, { target: { value: 'aapl' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add Symbol' }));
-    expect(screen.getAllByText(/AAPL/).length).toBe(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reset UI preferences' }));
-    expect(window.confirm).toHaveBeenCalled();
-    await waitFor(() => expect(api.resetSettings).toHaveBeenCalledWith('ui'));
-    expect(screen.getByText('UI preferences reset complete')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reset collector defaults' }));
-    await waitFor(() => expect(api.resetSettings).toHaveBeenCalledWith('collectors'));
-    expect(screen.getByText('Collector defaults reset complete')).toBeTruthy();
-    expect(screen.getByText('Boston, MA (02108)')).toBeTruthy();
-    expect(screen.getByText(/AAPL/)).toBeTruthy();
-  });
-
-  it('deletes account from settings and returns to signed-out state', async () => {
+  it('deletes account from user menu and returns to signed-out state', async () => {
     const api = await import('./api');
     window.location.hash = '#/settings';
     render(<App />);
 
-    const deleteButton = await screen.findByRole('button', { name: 'Delete account' });
-    fireEvent.click(deleteButton);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open user menu' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }));
 
     await waitFor(() => expect(api.deleteMyAccount).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Sign In' })).toBeTruthy());
   });
 
   it('restores defaults per card without resetting the other section', async () => {
@@ -236,18 +207,6 @@ describe('App', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Restore defaults' })[1]);
     expect(screen.getByText(/AAPL/)).toBeTruthy();
-  });
-
-  it('shows scoped danger-zone confirmation copy', async () => {
-    window.location.hash = '#/settings';
-    render(<App />);
-
-    await waitFor(() => expect(screen.getByRole('heading', { name: /danger zone/i })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Reset UI preferences' }));
-    expect(window.confirm).toHaveBeenCalledWith('Reset UI preferences only?');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reset collector defaults' }));
-    expect(window.confirm).toHaveBeenCalledWith('Reset collector defaults (ZIP codes, watchlist, and news sources)?');
   });
 
   it('applies theme controls immediately and ui reset restores default theme preferences', async () => {
@@ -285,7 +244,7 @@ describe('App', () => {
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     await waitFor(() => expect(document.documentElement.dataset.accent).toBe('blue'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset UI preferences' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Restore defaults' })[2]);
     await waitFor(() => expect(api.resetSettings).toHaveBeenCalledWith('ui'));
     await waitFor(() => expect((screen.getByLabelText('Theme mode') as HTMLSelectElement).value).toBe('light'));
     await waitFor(() => expect((screen.getByLabelText('Accent') as HTMLSelectElement).value).toBe('blue'));
@@ -948,7 +907,7 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: "Today's Overview" })).toBeTruthy());
     expect(screen.queryByRole('link', { name: /settings/i })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Sign In' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'About' })).toBeTruthy();
   });
 
@@ -962,7 +921,7 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: "Today's Overview" })).toBeTruthy());
     expect(screen.queryByText('Backend health: degraded')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Sign In' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: /Environment/i })).toBeTruthy();
   });
 
@@ -973,6 +932,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: /About Today's Overview/i })).toBeTruthy());
     expect(screen.getByText(/Why I built this/i)).toBeTruthy();
     expect(screen.getByText(/Key goals/i)).toBeTruthy();
+    expect(screen.getByText(/AI-Assisted Engineering Workflow/i)).toBeTruthy();
     expect(screen.getByText(/Tech stack/i)).toBeTruthy();
     expect(screen.getAllByText(/Java features used/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Libraries and tooling/i).length).toBeGreaterThan(0);
@@ -988,7 +948,7 @@ describe('App', () => {
     const emailInput = await screen.findByLabelText('Email');
     fireEvent.change(emailInput, { target: { value: 'user@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2-password' } });
-    const signInButtons = screen.getAllByRole('button', { name: 'Sign in' });
+    const signInButtons = screen.getAllByRole('button', { name: 'Sign In' });
     fireEvent.click(signInButtons[1]);
 
     await waitFor(() => expect(api.login).toHaveBeenCalledWith('user@example.com', 'hunter2-password'));
@@ -1005,7 +965,7 @@ describe('App', () => {
     render(<App />);
 
     const passwordInput = await screen.findByPlaceholderText('********');
-    const submitButton = screen.getAllByRole('button', { name: 'Create account' })[1];
+    const submitButton = screen.getAllByRole('button', { name: 'Create Account' })[1];
     expect(screen.getByText('Password must be at least 8 characters.')).toBeTruthy();
 
     fireEvent.change(passwordInput, { target: { value: 'short' } });
@@ -1028,13 +988,63 @@ describe('App', () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign In' })).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2-password' } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Sign In' })[1]);
 
     await waitFor(() => expect(api.login).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByRole('heading', { name: /Places/i })).toBeTruthy());
+  });
+
+  it('shows forgot password notice in the auth card and not in the header', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/forgot';
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
+
+    const notice = 'Password reset is still under construction for this demo. Please contact the project author if you need help accessing your account.';
+    await waitFor(() => expect(screen.getByText(notice)).toBeTruthy());
+    const header = screen.getByRole('banner');
+    expect(within(header).queryByText(notice)).toBeNull();
+  });
+
+  it('clears forgot password notice on cancel', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/forgot';
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
+
+    const notice = 'Password reset is still under construction for this demo. Please contact the project author if you need help accessing your account.';
+    await waitFor(() => expect(screen.getByText(notice)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(screen.queryByText(notice)).toBeNull();
+  });
+
+  it('clears auth notice on mode switch', async () => {
+    const api = await import('./api');
+    vi.mocked(api.fetchMe).mockResolvedValueOnce(null);
+    window.location.hash = '#/reset?token=test-reset-token';
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'new-password-123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+
+    const notice = 'Password reset complete. You can now log in.';
+    await waitFor(() => expect(screen.getByText(notice)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+    expect(screen.queryByText(notice)).toBeNull();
   });
 
   it('reset flow submits token and password from reset route', async () => {

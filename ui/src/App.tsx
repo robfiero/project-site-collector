@@ -175,6 +175,7 @@ export default function App() {
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
   const [devOutbox, setDevOutbox] = useState<DevOutboxEmail[]>([]);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [versionInfo, setVersionInfo] = useState<{ version?: string; buildTime?: string; gitSha?: string }>({});
   const [settingsSaveState, setSettingsSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -190,6 +191,7 @@ export default function App() {
   const [adminEmailError, setAdminEmailError] = useState<string | null>(null);
   const [zipInput, setZipInput] = useState<string>('');
   const [symbolInput, setSymbolInput] = useState<string>('');
+  const [userMenuOpen, setUserMenuOpen] = useState<boolean>(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -198,6 +200,7 @@ export default function App() {
   const pausedRef = useRef<boolean>(false);
   const settingsSavedTimerRef = useRef<number | null>(null);
   const previousRouteRef = useRef<RouteName>(route);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onHashChange = () => setRoute(readRouteFromHash());
@@ -216,6 +219,40 @@ export default function App() {
       setAuthMode('login');
     }
   }, [route]);
+
+  useEffect(() => {
+    if (route !== 'auth') {
+      setAuthMessage(null);
+    }
+    if (route !== 'forgot') {
+      setForgotMessage(null);
+    }
+  }, [route]);
+
+  useEffect(() => {
+    if (!userMenuOpen) {
+      return;
+    }
+    const handleClick = (event: MouseEvent) => {
+      if (!userMenuRef.current) {
+        return;
+      }
+      if (!userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setUserMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClick);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [userMenuOpen]);
 
   useEffect(() => {
     if (authUser) {
@@ -785,6 +822,27 @@ export default function App() {
     }
   };
 
+  const deleteAccount = async (): Promise<'ok' | 'error'> => {
+    try {
+      await deleteMyAccount();
+      setAuthUser(null);
+      setSessionExpired(false);
+      setAuthMessage(null);
+      setZipCodes(loadZipCodes());
+      setWatchlist(loadWatchlist());
+      setSelectedNewsSourceIds(catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES);
+      setThemeMode(DEFAULT_THEME_MODE);
+      setAccent(DEFAULT_ACCENT);
+      window.location.hash = '#/';
+      return 'ok';
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+      }
+      return 'error';
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -794,14 +852,57 @@ export default function App() {
               <h1>Today&apos;s Overview</h1>
               <nav className="nav">
                 <a href="#/" className={route === 'home' ? 'active' : ''}>Home</a>
-                {authUser && <a href="#/settings" className={route === 'settings' ? 'active' : ''}>⚙ Settings</a>}
+                {authUser && <a href="#/settings" className={route === 'settings' ? 'active' : ''}>Settings</a>}
                 <a href="#/admin" className={route === 'admin' ? 'active' : ''}>Admin / Diagnostics</a>
                 <a href="#/about" className={route === 'about' ? 'active' : ''}>About</a>
-                {!authUser && <a href="#/auth" className={route === 'auth' ? 'active' : ''}>Sign in</a>}
-                {authUser && <button type="button" onClick={doSignOut}>Sign out</button>}
+              {!authUser && <a href="#/auth" className={route === 'auth' ? 'active' : ''}>Sign In</a>}
+                {authUser && (
+                  <div className="user-menu" ref={userMenuRef}>
+                    <button
+                      type="button"
+                      className="user-menu-button"
+                      aria-haspopup="menu"
+                      aria-expanded={userMenuOpen}
+                      aria-label="Open user menu"
+                      onClick={() => setUserMenuOpen((open) => !open)}
+                    >
+                      <span className="user-menu-icon" aria-hidden="true">👤</span>
+                      <span className="user-menu-caret" aria-hidden="true">▾</span>
+                    </button>
+                    {userMenuOpen && (
+                      <div className="user-menu-panel" role="menu">
+                        <p className="user-menu-label">Logged in as</p>
+                        <p className="user-menu-email">{authUser.email}</p>
+                        <div className="user-menu-divider" />
+                        <button
+                          type="button"
+                          className="user-menu-item"
+                          onClick={async () => {
+                            setUserMenuOpen(false);
+                            await doSignOut();
+                          }}
+                        >
+                          Log out
+                        </button>
+                        <button
+                          type="button"
+                          className="user-menu-item destructive"
+                          onClick={async () => {
+                            if (!window.confirm('Delete your account? This cannot be undone.')) {
+                              return;
+                            }
+                            setUserMenuOpen(false);
+                            await deleteAccount();
+                          }}
+                        >
+                          Delete account
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </nav>
             </div>
-            {authUser && <p className="meta signed-in-label-row">Signed in as {authUser.email}</p>}
             {showHeaderStatus && (
               <div className="header-status">
                 {health !== 'ok' && <span className="warning">Backend health: degraded</span>}
@@ -816,7 +917,6 @@ export default function App() {
                 <button type="button" onClick={() => setSessionExpired(false)} aria-label="Dismiss session expired message">Dismiss</button>
               </p>
             )}
-            {authMessage && <p className="error">{authMessage}</p>}
           </div>
         </div>
       </header>
@@ -877,27 +977,7 @@ export default function App() {
             onThemeModeChange={setThemeMode}
             onAccentChange={setAccent}
             onResetUiPreferences={resetUiPreferences}
-            onResetCollectorDefaults={resetCollectorDefaults}
-            onDeleteAccount={async () => {
-              try {
-                await deleteMyAccount();
-                setAuthUser(null);
-                setSessionExpired(false);
-                setAuthMessage(null);
-                setZipCodes(loadZipCodes());
-                setWatchlist(loadWatchlist());
-                setSelectedNewsSourceIds(catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES);
-                setThemeMode(DEFAULT_THEME_MODE);
-                setAccent(DEFAULT_ACCENT);
-                window.location.hash = '#/';
-                return 'ok';
-              } catch (error) {
-                if (isUnauthorizedError(error)) {
-                  handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
-                }
-                return 'error';
-              }
-            }}
+            onDeleteAccount={deleteAccount}
           />
           ) : authResolved ? (
             <AuthPage
@@ -916,6 +996,7 @@ export default function App() {
           <UnifiedAuthPage
             mode={authMode}
             authMessage={authMessage}
+            onClearAuthMessage={() => setAuthMessage(null)}
             onModeChange={(mode) => {
               setAuthMode(mode);
               setAuthMessage(null);
@@ -964,9 +1045,12 @@ export default function App() {
             description="Enter your email and we will send reset instructions."
             submitLabel="Send reset link"
             fields={[{ key: 'email', label: 'Email', type: 'email' }]}
+            notice={forgotMessage}
+            onBeforeSubmit={() => setForgotMessage(null)}
+            onCancel={() => setForgotMessage(null)}
             onSubmit={async (values) => {
               await forgotPassword(values.email);
-              setAuthMessage('If that account exists, a reset email has been sent.');
+              setForgotMessage('Password reset is still under construction for this demo. Please contact the project author if you need help accessing your account.');
             }}
           />
         ) : route === 'reset' ? (
@@ -975,6 +1059,7 @@ export default function App() {
             description="Set your new password."
             submitLabel="Reset password"
             fields={[{ key: 'password', label: 'New password', type: 'password' }]}
+            onBeforeSubmit={() => setAuthMessage(null)}
             onSubmit={async (values) => {
               const token = readResetTokenFromHash();
               if (!token) {
@@ -1271,7 +1356,6 @@ type SettingsPageProps = {
   onThemeModeChange: (value: ThemeMode) => void;
   onAccentChange: (value: Accent) => void;
   onResetUiPreferences: () => Promise<'ok' | 'error'>;
-  onResetCollectorDefaults: () => Promise<'ok' | 'error'>;
   onDeleteAccount: () => Promise<'ok' | 'error'>;
 };
 
@@ -1282,12 +1366,9 @@ function SettingsPage(props: SettingsPageProps) {
   const symbolValid = symbolCandidate.length > 0;
   const [zipHint, setZipHint] = useState<string>('');
   const [symbolHint, setSymbolHint] = useState<string>('');
-  const [resetHint, setResetHint] = useState<string>('');
   const [deleteHint, setDeleteHint] = useState<string>('');
   const [draggingZip, setDraggingZip] = useState<string | null>(null);
   const [draggingSymbol, setDraggingSymbol] = useState<string | null>(null);
-  const uiResetPrompt = 'Reset UI preferences only?';
-  const collectorResetPrompt = 'Reset collector defaults (ZIP codes, watchlist, and news sources)?';
 
   return (
     <main className="settings-page">
@@ -1305,7 +1386,6 @@ function SettingsPage(props: SettingsPageProps) {
               onClick={() => {
                 props.onRestorePlaces();
                 setZipHint('');
-                setResetHint('');
               }}
             >
               Restore defaults
@@ -1319,7 +1399,6 @@ function SettingsPage(props: SettingsPageProps) {
             onSubmit={(e) => {
               e.preventDefault();
               const result = props.addZip();
-              setResetHint('');
               if (result === 'invalid') {
                 setZipHint('Enter a 5-digit ZIP');
               } else if (result === 'duplicate') {
@@ -1391,7 +1470,6 @@ function SettingsPage(props: SettingsPageProps) {
               onClick={() => {
                 props.onRestoreWatchlist();
                 setSymbolHint('');
-                setResetHint('');
               }}
             >
               Restore defaults
@@ -1403,7 +1481,6 @@ function SettingsPage(props: SettingsPageProps) {
             onSubmit={(e) => {
               e.preventDefault();
               const result = props.addSymbol();
-              setResetHint('');
               if (result === 'invalid') {
                 setSymbolHint('Enter a symbol (e.g., NVDA)');
               } else if (result === 'duplicate') {
@@ -1469,6 +1546,15 @@ function SettingsPage(props: SettingsPageProps) {
         <section className="card controls">
           <div className="card-title-row">
             <h2>Appearance</h2>
+            <button
+              type="button"
+              className="link-button"
+              onClick={async () => {
+                await props.onResetUiPreferences();
+              }}
+            >
+              Restore defaults
+            </button>
           </div>
           <p className="meta">Theme updates apply immediately and are saved to your account.</p>
           <div className="settings-select-grid">
@@ -1507,7 +1593,6 @@ function SettingsPage(props: SettingsPageProps) {
               className="link-button"
               onClick={() => {
                 props.onRestoreNewsSources();
-                setResetHint('');
               }}
             >
               Restore defaults
@@ -1536,60 +1621,7 @@ function SettingsPage(props: SettingsPageProps) {
           </div>
         </section>
       </section>
-      <section className="card">
-        <h2>Account</h2>
-        <p className="meta">Delete your account and remove stored preferences for this user.</p>
-        <div className="settings-actions">
-          <button
-            type="button"
-            onClick={async () => {
-              if (!window.confirm('Delete your account? This cannot be undone.')) {
-                return;
-              }
-              const result = await props.onDeleteAccount();
-              setDeleteHint(result === 'ok' ? 'Account deleted. You are signed out.' : 'Account deletion failed');
-            }}
-          >
-            Delete account
-          </button>
-          {deleteHint && <p className="meta inline-hint">{deleteHint}</p>}
-        </div>
-      </section>
-      <section className="card danger-zone">
-        <h2>Danger zone</h2>
-        <p className="meta">Run scoped reset actions to avoid unintentional settings changes.</p>
-        <div className="settings-actions">
-          <button
-            type="button"
-            onClick={async () => {
-              if (!window.confirm(uiResetPrompt)) {
-                return;
-              }
-              const result = await props.onResetUiPreferences();
-              setZipHint('');
-              setSymbolHint('');
-              setResetHint(result === 'ok' ? 'UI preferences reset complete' : 'UI preferences reset failed');
-            }}
-          >
-            Reset UI preferences
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!window.confirm(collectorResetPrompt)) {
-                return;
-              }
-              const result = await props.onResetCollectorDefaults();
-              setZipHint('');
-              setSymbolHint('');
-              setResetHint(result === 'ok' ? 'Collector defaults reset complete' : 'Collector defaults reset failed');
-            }}
-          >
-            Reset collector defaults
-          </button>
-          {resetHint && <p className="meta inline-hint">{resetHint}</p>}
-        </div>
-      </section>
+      {deleteHint && <p className="meta inline-hint">{deleteHint}</p>}
     </main>
   );
 }
@@ -1608,12 +1640,16 @@ type AuthPageProps = {
   passwordRequirement?: string;
   embedded?: boolean;
   showForgot?: boolean;
+  notice?: string | null;
+  onBeforeSubmit?: () => void;
+  onCancel?: () => void;
   onSubmit: (values: Record<'email' | 'password', string>) => Promise<void>;
 };
 
 type UnifiedAuthPageProps = {
   mode: 'login' | 'signup';
   authMessage: string | null;
+  onClearAuthMessage: () => void;
   onModeChange: (mode: 'login' | 'signup') => void;
   onLogin: (values: Record<'email' | 'password', string>) => Promise<void>;
   onSignup: (values: Record<'email' | 'password', string>) => Promise<void>;
@@ -1630,10 +1666,14 @@ function AuthPage(props: AuthPageProps) {
   const passwordError = passwordTooShort ? props.passwordRequirement : null;
   const passwordHelper = passwordError ?? props.passwordRequirement ?? null;
   const disableSubmit = pending || (requiresMinPassword && hasPasswordField && password.length < 8);
-  const pendingLabel = props.submitLabel === 'Sign in'
-    ? 'Signing in...'
-    : props.submitLabel === 'Create account'
-      ? 'Creating account...'
+  const pendingLabel = props.submitLabel === 'Sign In'
+    ? 'Signing In...'
+    : props.submitLabel === 'Create Account'
+      ? 'Creating Account...'
+      : props.submitLabel === 'Sign in'
+        ? 'Signing in...'
+        : props.submitLabel === 'Create account'
+          ? 'Creating account...'
       : props.submitLabel === 'Send reset link'
         ? 'Sending link...'
         : props.submitLabel === 'Reset password'
@@ -1649,6 +1689,7 @@ function AuthPage(props: AuthPageProps) {
         className="auth-form"
         onSubmit={async (event) => {
           event.preventDefault();
+          props.onBeforeSubmit?.();
           setPending(true);
           setMessage(null);
           try {
@@ -1682,6 +1723,7 @@ function AuthPage(props: AuthPageProps) {
             Password
             <input
               type="password"
+              aria-label="Password"
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
@@ -1692,22 +1734,43 @@ function AuthPage(props: AuthPageProps) {
               placeholder="********"
               required
             />
-            {passwordHelper && <p className={passwordError ? 'meta inline-hint' : 'meta'}>{passwordHelper}</p>}
+            {passwordHelper ? (
+              <p className={passwordError ? 'meta inline-hint' : 'meta'}>{passwordHelper}</p>
+            ) : props.showForgot ? (
+              <p className="meta auth-forgot-slot">
+                <a href="#/forgot">Forgot password?</a>
+              </p>
+            ) : (
+              <p className="meta auth-forgot-slot">&nbsp;</p>
+            )}
           </label>
         )}
-        <button type="submit" className={`auth-submit${pending ? ' is-pending' : ''}`} disabled={disableSubmit}>
-          {pending ? (
-            <>
-              <span className="auth-spinner" aria-hidden="true" />
-              <span>{pendingLabel}</span>
-            </>
-          ) : (
-            props.submitLabel
-          )}
-        </button>
+        <div className="auth-actions">
+          <button
+            type="button"
+            className="auth-cancel"
+            onClick={() => {
+              props.onCancel?.();
+              window.location.hash = '#/';
+            }}
+          >
+            Cancel
+          </button>
+          <button type="submit" className={`auth-submit${pending ? ' is-pending' : ''}`} disabled={disableSubmit}>
+            {pending ? (
+              <>
+                <span className="auth-spinner" aria-hidden="true" />
+                <span>{pendingLabel}</span>
+              </>
+            ) : (
+              props.submitLabel
+            )}
+          </button>
+        </div>
       </form>
+      {props.notice ? <div className="auth-notice" role="status">{props.notice}</div> : null}
       {errorMessage ? <div className="auth-error" role="alert">{errorMessage}</div> : null}
-      {props.showForgot ? (
+      {!props.fields.some((field) => field.key === 'password') && props.showForgot ? (
         <p className="meta auth-links">
           <a href="#/forgot">Forgot password?</a>
         </p>
@@ -1720,8 +1783,8 @@ function AuthPage(props: AuthPageProps) {
   }
 
   return (
-    <main className="settings-page">
-      <section className="card controls">
+    <main className="settings-page auth-page">
+      <section className="card controls auth-card">
         {content}
       </section>
     </main>
@@ -1733,28 +1796,30 @@ function UnifiedAuthPage(props: UnifiedAuthPageProps) {
   const description = isSignup
     ? 'Create an account to save your dashboard settings.'
     : 'Sign in to save your settings and sync preferences.';
-  const submitLabel = isSignup ? 'Create account' : 'Sign in';
+  const submitLabel = isSignup ? 'Create Account' : 'Sign In';
   const onSubmit = isSignup ? props.onSignup : props.onLogin;
 
   return (
-    <main className="settings-page">
-      <section className="card controls">
-        <h2>{isSignup ? 'Create account' : 'Sign in'}</h2>
-        <p className="meta">{description}</p>
-        <div className="nav auth-toggle">
+    <main className="settings-page auth-page">
+      <section className="card controls auth-card">
+        <div className="auth-header">
+          <h2>{isSignup ? 'Create Account' : 'Sign In'}</h2>
+          <p className="meta">{description}</p>
+        </div>
+        <div className="auth-toggle">
           <button
             type="button"
             className={props.mode === 'login' ? 'active' : ''}
             onClick={() => props.onModeChange('login')}
           >
-            Sign in
+            Sign In
           </button>
           <button
             type="button"
             className={props.mode === 'signup' ? 'active' : ''}
             onClick={() => props.onModeChange('signup')}
           >
-            Create account
+            Create Account
           </button>
         </div>
         <AuthPage
@@ -1765,13 +1830,15 @@ function UnifiedAuthPage(props: UnifiedAuthPageProps) {
           submitLabel={submitLabel}
           passwordRequirement={isSignup ? 'Password must be at least 8 characters.' : undefined}
           showForgot={!isSignup}
+          onBeforeSubmit={props.onClearAuthMessage}
+          onCancel={props.onClearAuthMessage}
           fields={[
             { key: 'email', label: 'Email', type: 'email' },
             { key: 'password', label: 'Password', type: 'password' }
           ]}
           onSubmit={onSubmit}
         />
-        {props.authMessage && <p className="meta">{props.authMessage}</p>}
+        {props.authMessage && <div className="auth-notice" role="status">{props.authMessage}</div>}
       </section>
     </main>
   );

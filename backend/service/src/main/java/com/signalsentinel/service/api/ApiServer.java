@@ -10,6 +10,7 @@ import com.signalsentinel.service.auth.AuthService;
 import com.signalsentinel.service.auth.AuthUser;
 import com.signalsentinel.service.auth.UserPreferences;
 import com.signalsentinel.service.email.DevOutboxEmailSender;
+import com.signalsentinel.service.email.EmailMessage;
 import com.signalsentinel.service.env.EnvService;
 import com.signalsentinel.service.market.MarketDataService;
 import com.signalsentinel.service.store.EventStore;
@@ -758,7 +759,17 @@ public class ApiServer {
             writeJson(exchange, 404, Map.of("error", "dev_outbox_disabled"));
             return;
         }
-        writeJson(exchange, 200, devOutboxEmailSender.recent());
+        List<Map<String, Object>> sanitized = new ArrayList<>();
+        for (EmailMessage message : devOutboxEmailSender.recent()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("to", maskEmail(message.to()));
+            entry.put("subject", message.subject());
+            entry.put("body", message.body());
+            entry.put("links", List.of());
+            entry.put("createdAt", message.createdAt());
+            sanitized.add(entry);
+        }
+        writeJson(exchange, 200, sanitized);
     }
 
     private boolean ensureGet(HttpExchange exchange, boolean corsEnabled) throws IOException {
@@ -816,6 +827,20 @@ public class ApiServer {
 
     private Map<String, Object> readBody(HttpExchange exchange) throws IOException {
         return JsonUtils.objectMapper().readValue(exchange.getRequestBody(), Map.class);
+    }
+
+    private static String maskEmail(String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        String[] parts = value.split("@", 2);
+        if (parts.length != 2) {
+            return value;
+        }
+        String local = parts[0];
+        String domain = parts[1];
+        String prefix = local.substring(0, Math.min(2, local.length()));
+        return prefix + "***@" + domain;
     }
 
     private List<String> parseZipQuery(String raw) {

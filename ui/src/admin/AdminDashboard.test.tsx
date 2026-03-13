@@ -135,6 +135,25 @@ describe('AdminDashboard', () => {
     expect(screen.getByText('Email Digest Preview')).toBeTruthy();
   });
 
+  it('masks dev outbox recipients and hides reset link actions', () => {
+    renderDashboard({
+      devOutbox: [
+        {
+          to: 'robert@example.com',
+          subject: 'Password reset request',
+          createdAt: '2026-03-08T10:00:00Z',
+          links: ['https://reset.example.com/token/abc123']
+        }
+      ]
+    });
+    expect(screen.getByText('Password reset request')).toBeTruthy();
+    expect(screen.getByText('To: ro***@example.com')).toBeTruthy();
+    expect(screen.queryByText('robert@example.com')).toBeNull();
+    expect(screen.queryByText('Open reset link')).toBeNull();
+    expect(screen.queryByText('Copy link')).toBeNull();
+    expect(screen.queryByText('https://reset.example.com/token/abc123')).toBeNull();
+  });
+
   it('renders smtp active mode label and helper text for configured smtp mode', () => {
     renderDashboard({
       emailPreview: {

@@ -16,9 +16,6 @@ export default function AboutPage() {
         <div className="about-author">
           <div className="about-author-panel">
             <p className="about-author-title">Created by <strong>Robert Fiero</strong></p>
-            <p className="meta about-author-subtitle">
-              Built with an AI-assisted design and implementation workflow that combines modern engineering practices with iterative experimentation.
-            </p>
             <div className="about-author-links">
               <a className="about-author-link" href="https://www.linkedin.com/in/robert-fiero/" target="_blank" rel="noreferrer">
                 View LinkedIn profile →
@@ -43,7 +40,7 @@ export default function AboutPage() {
       <section className="settings-grid">
         <section className="card">
           <h3>Why I built this</h3>
-          <p className="meta section-description">A production-style system built to prove out real-world outcomes.</p>
+          <p className="meta section-description">A production-style system designed to explore real-world engineering outcomes.</p>
           <ul>
             <li>Shipping a full-stack system with real data ingestion and delivery.</li>
             <li>Stress-testing reliability patterns such as polling, backoff, and graceful failure.</li>
@@ -99,6 +96,27 @@ export default function AboutPage() {
 
       <section className="settings-grid">
         <section className="card">
+          <h3>AI-Assisted Engineering Workflow</h3>
+          <p>ChatGPT and Codex were used throughout development to help:</p>
+          <ul>
+            <li>brainstorm approaches</li>
+            <li>refine implementation details</li>
+            <li>generate targeted code patches</li>
+            <li>improve test coverage</li>
+            <li>accelerate incremental UX polish passes</li>
+          </ul>
+          <p>These tools acted as development accelerators and thought partners during implementation.</p>
+          <p>
+            Architecture decisions, product direction, engineering tradeoffs, and final code review remained intentional and hands-on throughout development.
+          </p>
+          <p>
+            One of the goals of this project is to demonstrate how modern engineers can use AI tools responsibly: not as a substitute for judgment,
+            but as a force multiplier for iteration, clarity, and delivery.
+          </p>
+          <p>All AI-generated code was reviewed, adjusted, and integrated using the same engineering standards applied to human-written code.</p>
+        </section>
+
+        <section className="card">
           <h3>What I learned</h3>
           <p className="meta section-description">The polish comes from small, repeatable decisions.</p>
           <ul>
@@ -109,7 +127,9 @@ export default function AboutPage() {
             <li>Building systems that evolve through small, iterative improvements.</li>
           </ul>
         </section>
+      </section>
 
+      <section className="settings-grid">
         <section className="card">
           <h3>Why this project matters</h3>
           <p className="meta section-description">A credible demo of engineering rigor and product thinking.</p>

@@ -286,24 +286,8 @@ export default function AdminDashboard(props: AdminDashboardProps) {
             {props.devOutbox.map((email, idx) => (
               <article key={`${email.createdAt}-${idx}`} className="item">
                 <h3>{email.subject}</h3>
-                <p className="meta">To: {email.to}</p>
+                <p className="meta">To: {maskEmail(email.to)}</p>
                 <p className="meta">{email.createdAt}</p>
-                {email.links?.[0] && (
-                  <div className="outbox-actions">
-                    <a href={email.links[0]} target="_blank" rel="noreferrer">Open reset link</a>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!navigator?.clipboard?.writeText) {
-                          return;
-                        }
-                        await navigator.clipboard.writeText(email.links[0]);
-                      }}
-                    >
-                      Copy link
-                    </button>
-                  </div>
-                )}
               </article>
             ))}
           </div>
@@ -335,7 +319,7 @@ function formatUpdatedAge(updatedAt: number, now: number): string {
   return `${diffSeconds}s ago`;
 }
 
-  function formatHash(value: string | null | undefined): string {
+function formatHash(value: string | null | undefined): string {
   if (!value) {
     return '-';
   }
@@ -343,6 +327,18 @@ function formatUpdatedAge(updatedAt: number, now: number): string {
     return value;
   }
   return `${value.slice(0, 6)}…${value.slice(-6)}`;
+}
+
+function maskEmail(value: string | null | undefined): string {
+  if (!value) {
+    return '-';
+  }
+  const [local, domain] = value.split('@');
+  if (!domain) {
+    return value;
+  }
+  const prefix = local.slice(0, Math.min(2, local.length));
+  return `${prefix}***@${domain}`;
 }
 
 function formatDeliveryModeLabel(mode: string): string {

@@ -19,6 +19,7 @@ import com.signalsentinel.service.auth.PreferencesStore;
 import com.signalsentinel.service.auth.ResetTokenService;
 import com.signalsentinel.service.auth.UserStore;
 import com.signalsentinel.service.email.DevOutboxEmailSender;
+import com.signalsentinel.service.email.EmailMessage;
 import com.signalsentinel.service.store.EventCodec;
 import com.signalsentinel.service.store.JsonFileSignalStore;
 import com.signalsentinel.service.store.JsonlEventStore;
@@ -162,6 +163,7 @@ class AuthApiIntegrationTest {
         JsonNode outbox = JsonUtils.objectMapper().readTree(outboxAfterKnown.body());
         assertEquals(1, outbox.size());
         assertTrue(outbox.get(0).get("subject").asText().toLowerCase().contains("password reset"));
+        assertEquals("kn***@example.com", outbox.get(0).get("to").asText());
     }
 
     @Test
@@ -188,7 +190,7 @@ class AuthApiIntegrationTest {
         client.send(jsonPost(runtime.uri("/api/auth/forgot"), Map.of(
                 "email", "reset@example.com"
         )), HttpResponse.BodyHandlers.ofString());
-        String token = tokenFromOutbox(client, runtime);
+        String token = tokenFromOutbox(runtime);
         HttpResponse<String> first = client.send(jsonPost(runtime.uri("/api/auth/reset"), Map.of(
                 "token", token,
                 "newPassword", "new-password-123"
@@ -895,7 +897,16 @@ class AuthApiIntegrationTest {
         AtomicInteger refreshCount = new AtomicInteger();
         apiServer.setCollectorRefreshHook(collectors -> refreshCount.incrementAndGet());
         apiServer.start();
-        return new TestRuntime(apiServer.actualPort(), userStore, passwordResetStore, preferencesStore, signalStore, refreshCount, eventBus);
+        return new TestRuntime(
+                apiServer.actualPort(),
+                userStore,
+                passwordResetStore,
+                preferencesStore,
+                signalStore,
+                refreshCount,
+                eventBus,
+                devOutboxEnabled ? devOutbox : null
+        );
     }
 
     private static void waitForRefreshCount(AtomicInteger counter, int expectedAtLeast) throws InterruptedException {
@@ -918,13 +929,13 @@ class AuthApiIntegrationTest {
         return end >= 0 ? raw.substring(0, end) : raw;
     }
 
-    private static String tokenFromOutbox(HttpClient client, TestRuntime runtime) throws Exception {
-        HttpResponse<String> response = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/dev/outbox")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        JsonNode outbox = JsonUtils.objectMapper().readTree(response.body());
-        String link = outbox.get(outbox.size() - 1).get("links").get(0).asText();
+    private static String tokenFromOutbox(TestRuntime runtime) {
+        DevOutboxEmailSender devOutbox = runtime.devOutboxEmailSender();
+        if (devOutbox == null) {
+            throw new IllegalStateException("Dev outbox is not available");
+        }
+        List<EmailMessage> outbox = devOutbox.recent();
+        String link = outbox.get(outbox.size() - 1).links().get(0);
         int marker = link.indexOf("token=");
         return link.substring(marker + "token=".length());
     }
@@ -936,7 +947,8 @@ class AuthApiIntegrationTest {
             PreferencesStore preferencesStore,
             JsonFileSignalStore signalStore,
             AtomicInteger refreshCount,
-            EventBus eventBus
+            EventBus eventBus,
+            DevOutboxEmailSender devOutboxEmailSender
     ) {
         URI uri(String path) {
             return URI.create("http://localhost:" + port + path);

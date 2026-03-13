@@ -1,13 +1,122 @@
 # Today's Overview
 
-Always-on signals platform backend (Java 25, Maven multi-module) with collectors, stores, scheduler runtime, and REST/SSE service.
+Today's Overview is a personal full-stack engineering project that explores a calm, operator-style dashboard for real-time signals such as news, local events, markets, weather, and environmental data. It is intentionally built as a production-style system rather than a prototype, with an emphasis on resilience, observability, incremental development, modern Java concurrency, and an AI-assisted engineering workflow.
+
+This README is structured to work for multiple audiences:
+- A recruiter who wants a quick, clear overview
+- An engineer who wants architecture and implementation detail
+- A user who wants to run the project locally
+- A reviewer who wants to understand the scope and development approach
+
+## Screenshots
+
+![Dashboard](docs/screenshots/dashboard.png)
+![Settings](docs/screenshots/settings.png)
+![Admin / Diagnostics](docs/screenshots/admin-diagnostics.png)
+![About](docs/screenshots/about.png)
+
+## Key capabilities
+
+- Real-time signals dashboard
+- Collector-based ingestion architecture
+- Server-Sent Events (SSE) streaming updates
+- Admin / Diagnostics operational tooling
+- Authentication with JWT + HttpOnly cookies
+- Secure password hashing (Argon2id / PBKDF2 fallback)
+- Password reset workflow
+- User preferences storage
+- Demo-safe operational diagnostics
+- AI-assisted development workflow
+
+## Architecture overview
+
+High-level flow:
+
+```
+Collectors
+→ Scheduler Runtime
+→ Event Store
+→ REST + SSE Service
+→ React Dashboard
+```
+
+The backend is structured as a collector pipeline that ingests signals on a schedule, stores snapshots/events, and streams live updates to the React UI. The UI renders both the real-time feed and an admin diagnostics view for operational visibility.
+
+## Technology stack
+
+**Backend**
+- Java 25 (preview features enabled)
+- Maven multi-module build
+- REST + SSE service
+- JSON persistence for users, preferences, and signals
+
+**Frontend**
+- React + Vite
+- TypeScript
+- SSE via `EventSource('/api/stream')`
+
+## AI-Assisted Engineering Workflow
+
+ChatGPT and Codex were used throughout development to help:
+
+- brainstorm approaches
+- refine implementation details
+- generate targeted code patches
+- improve test coverage
+- accelerate incremental UX polish passes
+
+These tools acted as development accelerators and thought partners during implementation. Architecture decisions, product direction, engineering tradeoffs, and final code review remained intentional and hands-on throughout development. One of the goals of this project is to demonstrate how modern engineers can use AI tools responsibly: not as a substitute for judgment, but as a force multiplier for iteration, clarity, and delivery. All AI-generated code was reviewed, adjusted, and integrated using the same engineering standards applied to human-written code.
+
+## Project goals
+
+- Build a calm, operator-style dashboard instead of a noisy scrolling feed
+- Treat operational visibility as a core product feature
+- Stress-test reliability patterns across flaky upstream sources
+- Maintain a production-style posture: resilience, observability, and safe defaults
+- Use modern Java concurrency primitives in a real system
+- Iterate with a disciplined, AI-assisted engineering workflow
+
+## Admin / Diagnostics
+
+The Admin / Diagnostics panel exists to demonstrate operational visibility as part of the product. It includes tooling for collector health, live activity, email diagnostics, and dev outbox visibility. Sensitive values are sanitized before reaching the browser so the page is safe to show publicly.
+
+## Security notes
+
+- Diagnostics are intentionally visible for demo purposes.
+- Sensitive fields such as recipient emails and reset-related values are sanitized before reaching the browser.
+- Auth uses JWT stored in HttpOnly cookies.
+- Password reset uses hashed, expiring, one-time-use tokens.
 
 ## Requirements
 
 - Java 25
 - Maven 3.9+
+- Node.js 18+ (for the UI)
 
-## Repository Scripts
+## Running locally
+
+### Backend
+
+From repo root:
+
+```bash
+cd backend
+./run-service.sh
+```
+
+The backend defaults to `http://localhost:8080`.
+
+### UI
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+The UI defaults to `http://localhost:5173` and expects the backend at `http://localhost:8080`.
+
+## Repository scripts
 
 All scripts are at repo root and wrap common backend commands.
 
@@ -29,19 +138,13 @@ What it does:
 ### Run subset tests
 
 - `./test-core.sh`
-
-What it does:
-- Runs only `core` module tests (`mvn -pl core test`).
+  - Runs only `core` module tests (`mvn -pl core test`).
 
 - `./test-collectors.sh`
-
-What it does:
-- Runs `collectors` tests and also builds required dependencies (`mvn -pl collectors -am test`).
+  - Runs `collectors` tests and also builds required dependencies (`mvn -pl collectors -am test`).
 
 - `./test-service.sh`
-
-What it does:
-- Runs `service` tests and also builds required dependencies (`mvn -pl service -am test`).
+  - Runs `service` tests and also builds required dependencies (`mvn -pl service -am test`).
 
 ### Coverage baseline (backend + UI)
 
@@ -73,7 +176,7 @@ What it does:
 - Removes backend compiled outputs via Maven clean (`mvn clean`).
 - Removes `ui/dist` if present.
 
-## Maven Commands (Direct)
+## Maven commands (direct)
 
 From repo root:
 
@@ -129,7 +232,7 @@ cd backend
 - `mvn clean`
   - Remove compiled outputs (`target/`) for backend modules.
 
-## Smoke Test Endpoints
+## Smoke test endpoints
 
 Run these after starting backend (default `http://localhost:8080`):
 
@@ -142,7 +245,7 @@ Run these after starting backend (default `http://localhost:8080`):
 - `curl -sS http://localhost:8080/api/catalog/defaults`
 - `curl -sS http://localhost:8080/api/config`
 
-## TLS Diagnostics and Truststore
+## TLS diagnostics and truststore
 
 If Java HttpClient reports certificate path errors (for example `PKIX path building failed`), use the built-in TLS checker:
 
@@ -179,7 +282,7 @@ The backend keeps secure defaults:
 - no trust-all SSL context
 - no hostname verification bypass
 
-## Environment Data (`/api/env`)
+## Environment data (`/api/env`)
 
 Backend environment status endpoint:
 
@@ -201,7 +304,7 @@ ZIP geocoding:
 Optional env vars:
 
 - `AIRNOW_API_KEY` (optional; without it, weather still works and AQI is marked unavailable)
-- `NOAA_USER_AGENT` (optional; defaults to `todays-overview/0.1 (contact: support@example.com)`)
+- `NOAA_USER_AGENT` (optional; defaults to `todays-overview/0.2.0-dev (contact: support@example.com)`)
 
 ## Local What's Happening (Ticketmaster)
 
@@ -225,7 +328,7 @@ Startup behavior:
 
 - If `TICKETMASTER_API_KEY` is missing, `localEventsCollector` is disabled and startup logs a clear warning.
 
-## Top News RSS Sources
+## Top news RSS sources
 
 Configured RSS sources in `backend/config/rss.json` include:
 
@@ -238,7 +341,7 @@ Reliability note:
 - AP (`feeds.apnews.com`) was removed due to recurring feed instability and replaced with NBC News + CBS News.
 - Politico (`www.politico.com/rss/politicopicks.xml`) was removed due to recurring 403/access restrictions and replaced with ABC News.
 
-## Notes on Java 25 Preview
+## Notes on Java 25 preview
 
 This project is configured for preview APIs (Structured Concurrency) across:
 
@@ -248,7 +351,7 @@ This project is configured for preview APIs (Structured Concurrency) across:
 
 So standard Maven/script commands run with `--enable-preview` consistently.
 
-## Coverage Reports (JaCoCo)
+## Coverage reports (JaCoCo)
 
 Where reports are generated:
 
@@ -276,14 +379,16 @@ Run combined backend + UI baseline:
 
 - `./coverage-baseline.sh`
 
-## UI Routes
+## UI routes
 
 - `#/` Home dashboard (default)
-- `#/login`, `#/signup`, `#/forgot`, `#/reset?token=...`
-- `#/settings` (authenticated users only; anonymous users are redirected to `#/login`)
+- `#/auth?mode=login` and `#/auth?mode=signup`
+- `#/forgot`, `#/reset?token=...`
+- `#/settings` (authenticated users only; anonymous users are redirected to `#/auth?mode=login`)
 - `#/admin` Admin / Diagnostics
+- `#/about` About
 
-## Auth + Preferences (Phase 6)
+## Auth + preferences
 
 - Anonymous users can access Home/Admin with defaults.
 - Authenticated users get:
@@ -291,7 +396,7 @@ Run combined backend + UI baseline:
   - server-side preferences via `/api/me/preferences`
   - persisted UI preferences in `/api/me/preferences`: `themeMode` and `accent`
   - scoped settings reset via `/api/settings/reset` with `scope=ui|collectors|all`
-  - account menu with sign-out
+  - account menu with sign-out and delete-account actions
 - Auth/session:
   - JWT in HttpOnly cookie
   - SameSite=Lax
@@ -299,28 +404,35 @@ Run combined backend + UI baseline:
   - `APP_ENV` supports `dev|prod` (default `dev`; unknown values warn and default to `dev`)
   - `AUTH_ENABLED` supports `true|false` (default `true`)
     - when `AUTH_ENABLED=false`, auth endpoints are disabled (`404`) and Home/Admin still work anonymously
-- Passwords:
-  - Argon2id hashing via Jargon2 RI backend
-  - On Apple Silicon/macOS arm64, `com.kosprov.jargon2` native RI binaries may be unavailable
-  - In `APP_ENV=dev`, service startup automatically falls back to a secure PBKDF2 hasher (pure Java) when native Argon2 is unavailable
-  - In `APP_ENV=prod`, Argon2 native backend remains required and startup fails fast when unavailable
-  - The native `PasswordHasherTest` may skip by design on unsupported architectures; this is expected
-  - A portable PBKDF2 password hasher test always runs to validate hash/verify behavior
-  - Quick check: `cd backend && mvn -pl service -am test -Dtest=PasswordHasherTest`
-  - Service-only tests: `cd backend && mvn -pl service test`
-  - Surefire reports (including skip reasons): `backend/service/target/surefire-reports/`
-  - Startup also validates availability:
-    - `APP_ENV=prod` + auth enabled: fail fast if unavailable
-    - `APP_ENV=dev` + auth enabled: auto-fallback to PBKDF2 when unavailable
-    - `ALLOW_INSECURE_AUTH_HASHER` is legacy; no longer required for normal dev startup
-- Password reset:
-  - `POST /api/auth/forgot` returns generic `200` for both existing and non-existing emails
-  - reset tokens are hashed, expiring, and one-time-use
-- Email:
-  - default dev outbox sender (zero setup)
-  - optional SMTP sender via environment variables
 
-## Replacing Demo Sources
+### Passwords
+
+- Argon2id hashing via Jargon2 RI backend
+- On Apple Silicon/macOS arm64, `com.kosprov.jargon2` native RI binaries may be unavailable
+- In `APP_ENV=dev`, service startup automatically falls back to a secure PBKDF2 hasher (pure Java) when native Argon2 is unavailable
+- In `APP_ENV=prod`, Argon2 native backend remains required and startup fails fast when unavailable
+- The native `PasswordHasherTest` may skip by design on unsupported architectures; this is expected
+- A portable PBKDF2 password hasher test always runs to validate hash/verify behavior
+- Quick check: `cd backend && mvn -pl service -am test -Dtest=PasswordHasherTest`
+- Service-only tests: `cd backend && mvn -pl service test`
+- Surefire reports (including skip reasons): `backend/service/target/surefire-reports/`
+- Startup also validates availability:
+  - `APP_ENV=prod` + auth enabled: fail fast if unavailable
+  - `APP_ENV=dev` + auth enabled: auto-fallback to PBKDF2 when unavailable
+  - `ALLOW_INSECURE_AUTH_HASHER` is legacy; no longer required for normal dev startup
+
+### Password reset
+
+- `POST /api/auth/forgot` returns generic `200` for both existing and non-existing emails
+- reset tokens are hashed, expiring, and one-time-use
+- dev outbox stores reset emails locally for demo/diagnostics; reset links are sanitized in API responses
+
+### Email / Dev outbox
+
+- default dev outbox sender (zero setup)
+- optional SMTP sender via environment variables
+
+## Replacing demo sources
 
 Default demo config ships with trusted HTTPS endpoints (for example `https://www.mozilla.org/en-US/` and `https://blog.mozilla.org/feed/`) so collectors work in a stock JDK truststore.
 
@@ -328,7 +440,7 @@ To customize:
 - edit `backend/config/sites.json` and `backend/config/rss.json` (and `backend/service/config/*` if you run directly from `backend/service`)
 - restart backend after config changes
 
-## Phase 6 Demo
+## Phase 6 demo
 
 An end-to-end auth/reset/preferences demo script is included:
 
@@ -360,3 +472,14 @@ Notes:
 - backend must be running first (`cd backend && ./run-service.sh`)
 - script uses `/api/dev/outbox` (dev mode required)
 - uses `jq` when available; otherwise falls back to `python3` JSON parsing
+
+## Future improvements
+
+- Containerization / Docker
+- AWS deployment
+- Richer dashboard refinements
+- Continued observability and collector improvements
+
+## Project status
+
+This is a personal engineering project and active learning system. It is not a production deployment.
