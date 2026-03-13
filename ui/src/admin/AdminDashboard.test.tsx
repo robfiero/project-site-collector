@@ -141,6 +141,7 @@ describe('AdminDashboard', () => {
         {
           to: 'robert@example.com',
           subject: 'Password reset request',
+          body: 'Reset request body',
           createdAt: '2026-03-08T10:00:00Z',
           links: ['https://reset.example.com/token/abc123']
         }
