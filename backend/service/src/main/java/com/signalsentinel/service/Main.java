@@ -220,8 +220,9 @@ public final class Main {
         List<Collector> collectors = ticketmasterConfig == null
                 ? List.of(siteCollector, rssCollector, envCollector)
                 : List.of(siteCollector, rssCollector, envCollector, ticketmasterEventsCollector);
+        int port = resolvePort(System.getenv(), LOGGER);
         ApiServer apiServer = new ApiServer(
-                8080,
+                port,
                 signalStore,
                 eventStore,
                 broadcaster,
@@ -249,6 +250,23 @@ public final class Main {
         }));
 
         shutdownLatch.await();
+    }
+
+    static int resolvePort(Map<String, String> env, Logger logger) {
+        String raw = env.getOrDefault("PORT", "8080").trim();
+        if (raw.isBlank()) {
+            return 8080;
+        }
+        try {
+            int port = Integer.parseInt(raw);
+            if (port <= 0 || port > 65535) {
+                throw new NumberFormatException("port out of range");
+            }
+            return port;
+        } catch (NumberFormatException ex) {
+            logger.warning("Invalid PORT value '" + raw + "'; defaulting to 8080.");
+            return 8080;
+        }
     }
 
     static PasswordHasher selectPasswordHasher(boolean devMode, boolean allowInsecureAuthHasher) {

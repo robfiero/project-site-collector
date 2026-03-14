@@ -470,7 +470,7 @@ What it verifies:
 
 Notes:
 - backend must be running first (`cd backend && ./run-service.sh`)
-- script uses `/api/dev/outbox` (dev mode required)
+- script uses `/api/dev/outbox` (dev mode required); reset links are sanitized in API responses, so the script assumes local dev access or may need adjustment if run against a sanitized endpoint
 - uses `jq` when available; otherwise falls back to `python3` JSON parsing
 
 ## Future improvements
