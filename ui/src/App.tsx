@@ -32,6 +32,7 @@ import { demoLocalHappenings } from './demoData';
 import { filterEvents, normalizeEventEnvelope } from './eventFeed';
 import { companyNameForSymbol, formatMarketSymbolLabel } from './markets';
 import { formatPlaceLabel } from './places';
+import { apiUrl } from './config/api';
 import cnnLogo from './assets/news-logos/cnn.svg';
 import foxLogo from './assets/news-logos/fox.svg';
 import nprLogo from './assets/news-logos/npr.svg';
@@ -441,7 +442,7 @@ export default function App() {
         return;
       }
       setConnectionState((state) => (state === 'open' ? state : 'connecting'));
-      const source = new EventSource('/api/stream');
+      const source = new EventSource(apiUrl('/api/stream'));
       eventSourceRef.current = source;
 
       source.onopen = () => {

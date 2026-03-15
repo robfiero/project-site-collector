@@ -8,6 +8,7 @@ import type {
   MetricsResponse,
   SignalsSnapshot
 } from './models';
+import { apiUrl } from './config/api';
 
 export interface HealthResponse {
   status: string;
@@ -17,7 +18,7 @@ export interface HealthResponse {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetch('/api/health');
+  const response = await fetch(apiUrl('/api/health'));
   if (!response.ok) {
     throw new Error(`Health request failed (${response.status})`);
   }
@@ -25,7 +26,7 @@ export async function fetchHealth(): Promise<HealthResponse> {
 }
 
 export async function fetchSignals(): Promise<SignalsSnapshot> {
-  const response = await fetch('/api/signals');
+  const response = await fetch(apiUrl('/api/signals'));
   if (!response.ok) {
     throw new Error(`Signals request failed (${response.status})`);
   }
@@ -33,7 +34,7 @@ export async function fetchSignals(): Promise<SignalsSnapshot> {
 }
 
 export async function fetchEvents(limit = 100): Promise<unknown[]> {
-  const response = await fetch(`/api/events?limit=${limit}`);
+  const response = await fetch(apiUrl(`/api/events?limit=${limit}`));
   if (!response.ok) {
     throw new Error(`Events request failed (${response.status})`);
   }
@@ -41,7 +42,7 @@ export async function fetchEvents(limit = 100): Promise<unknown[]> {
 }
 
 export async function fetchMetrics(): Promise<MetricsResponse> {
-  const response = await fetch('/api/metrics');
+  const response = await fetch(apiUrl('/api/metrics'));
   if (!response.ok) {
     throw new Error(`Metrics request failed (${response.status})`);
   }
@@ -50,7 +51,7 @@ export async function fetchMetrics(): Promise<MetricsResponse> {
 
 export async function fetchMarkets(symbols: string[]): Promise<MarketsSnapshot> {
   const query = symbols.length > 0 ? `?symbols=${encodeURIComponent(symbols.join(','))}` : '';
-  const response = await fetch(`/api/markets${query}`);
+  const response = await fetch(apiUrl(`/api/markets${query}`));
   if (!response.ok) {
     throw new Error(`Markets request failed (${response.status})`);
   }
@@ -58,7 +59,7 @@ export async function fetchMarkets(symbols: string[]): Promise<MarketsSnapshot> 
 }
 
 export async function fetchCollectorStatus(): Promise<Record<string, CollectorStatus>> {
-  const response = await fetch('/api/collectors/status');
+  const response = await fetch(apiUrl('/api/collectors/status'));
   if (!response.ok) {
     throw new Error(`Collector status request failed (${response.status})`);
   }
@@ -66,7 +67,7 @@ export async function fetchCollectorStatus(): Promise<Record<string, CollectorSt
 }
 
 export async function fetchCatalogDefaults(): Promise<CatalogDefaults> {
-  const response = await fetch('/api/catalog/defaults');
+  const response = await fetch(apiUrl('/api/catalog/defaults'));
   if (!response.ok) {
     throw new Error(`Catalog defaults request failed (${response.status})`);
   }
@@ -74,7 +75,7 @@ export async function fetchCatalogDefaults(): Promise<CatalogDefaults> {
 }
 
 export async function fetchConfigView(): Promise<Record<string, unknown>> {
-  const response = await fetch('/api/config');
+  const response = await fetch(apiUrl('/api/config'));
   if (!response.ok) {
     throw new Error(`Config request failed (${response.status})`);
   }
@@ -83,7 +84,7 @@ export async function fetchConfigView(): Promise<Record<string, unknown>> {
 
 export async function fetchEnvironment(zips: string[]): Promise<EnvStatus[]> {
   const query = zips.length > 0 ? `?zips=${encodeURIComponent(zips.join(','))}` : '';
-  const response = await fetch(`/api/env${query}`);
+  const response = await fetch(apiUrl(`/api/env${query}`));
   if (response.ok) {
     return response.json();
   }
@@ -93,7 +94,7 @@ export async function fetchEnvironment(zips: string[]): Promise<EnvStatus[]> {
 
   const settled = await Promise.allSettled(
     zips.map(async (zip) => {
-      const single = await fetch(`/api/env?zips=${encodeURIComponent(zip)}`);
+      const single = await fetch(apiUrl(`/api/env?zips=${encodeURIComponent(zip)}`));
       if (!single.ok) {
         throw new Error(`Environment request failed (${single.status}) for ZIP ${zip}`);
       }
@@ -150,7 +151,7 @@ export interface SettingsResetResponse {
 }
 
 async function postJson(path: string, payload: Record<string, unknown>): Promise<Response> {
-  return fetch(path, {
+  return fetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -204,14 +205,14 @@ export async function login(email: string, password: string): Promise<AuthUserVi
 }
 
 export async function logout(): Promise<void> {
-  const response = await fetch('/api/auth/logout', { method: 'POST' });
+  const response = await fetch(apiUrl('/api/auth/logout'), { method: 'POST' });
   if (!response.ok) {
     await throwApiError(response, `Logout failed (${response.status})`);
   }
 }
 
 export async function deleteMyAccount(): Promise<void> {
-  const response = await fetch('/api/me/delete', { method: 'POST' });
+  const response = await fetch(apiUrl('/api/me/delete'), { method: 'POST' });
   if (!response.ok) {
     await throwApiError(response, `Account deletion failed (${response.status})`);
   }
@@ -232,7 +233,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 export async function fetchMe(): Promise<AuthUserView | null> {
-  const response = await fetch('/api/me');
+  const response = await fetch(apiUrl('/api/me'));
   if (response.status === 401) {
     return null;
   }
@@ -253,7 +254,7 @@ export async function fetchMe(): Promise<AuthUserView | null> {
 }
 
 export async function fetchMyPreferences(): Promise<PreferencesPayload> {
-  const response = await fetch('/api/me/preferences');
+  const response = await fetch(apiUrl('/api/me/preferences'));
   if (!response.ok) {
     await throwApiError(response, `Preferences request failed (${response.status})`);
   }
@@ -261,7 +262,7 @@ export async function fetchMyPreferences(): Promise<PreferencesPayload> {
 }
 
 export async function saveMyPreferences(payload: PreferencesPayload): Promise<PreferencesPayload> {
-  const response = await fetch('/api/me/preferences', {
+  const response = await fetch(apiUrl('/api/me/preferences'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -273,7 +274,7 @@ export async function saveMyPreferences(payload: PreferencesPayload): Promise<Pr
 }
 
 export async function fetchDevOutbox(): Promise<DevOutboxEmail[]> {
-  const response = await fetch('/api/dev/outbox');
+  const response = await fetch(apiUrl('/api/dev/outbox'));
   if (response.status === 404) {
     return [];
   }
@@ -284,7 +285,7 @@ export async function fetchDevOutbox(): Promise<DevOutboxEmail[]> {
 }
 
 export async function fetchAdminTrends(): Promise<AdminTrendsSnapshot> {
-  const response = await fetch('/api/admin/trends');
+  const response = await fetch(apiUrl('/api/admin/trends'));
   if (!response.ok) {
     throw new Error(`Admin trends request failed (${response.status})`);
   }
@@ -292,7 +293,7 @@ export async function fetchAdminTrends(): Promise<AdminTrendsSnapshot> {
 }
 
 export async function fetchAdminEmailPreview(): Promise<AdminEmailPreview> {
-  const response = await fetch('/api/admin/email/preview');
+  const response = await fetch(apiUrl('/api/admin/email/preview'));
   if (!response.ok) {
     throw new Error(`Admin email preview request failed (${response.status})`);
   }
@@ -300,7 +301,7 @@ export async function fetchAdminEmailPreview(): Promise<AdminEmailPreview> {
 }
 
 export async function fetchNewsSourceSettings(): Promise<NewsSourceSettingsPayload> {
-  const response = await fetch('/api/settings/newsSources');
+  const response = await fetch(apiUrl('/api/settings/newsSources'));
   if (!response.ok) {
     await throwApiError(response, `News source settings request failed (${response.status})`);
   }
@@ -308,7 +309,7 @@ export async function fetchNewsSourceSettings(): Promise<NewsSourceSettingsPaylo
 }
 
 export async function saveNewsSourceSettings(selectedSources: string[]): Promise<NewsSourceSettingsPayload> {
-  const response = await fetch('/api/settings/newsSources', {
+  const response = await fetch(apiUrl('/api/settings/newsSources'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ selectedSources })
@@ -320,7 +321,7 @@ export async function saveNewsSourceSettings(selectedSources: string[]): Promise
 }
 
 export async function resetSettings(scope: SettingsResetScope): Promise<SettingsResetResponse> {
-  const response = await fetch('/api/settings/reset', {
+  const response = await fetch(apiUrl('/api/settings/reset'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scope })
@@ -332,7 +333,7 @@ export async function resetSettings(scope: SettingsResetScope): Promise<Settings
 }
 
 export async function triggerCollectorRefresh(collectors: string[] = ['envCollector', 'rssCollector', 'localEventsCollector']): Promise<void> {
-  const response = await fetch('/api/collectors/refresh', {
+  const response = await fetch(apiUrl('/api/collectors/refresh'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ collectors })

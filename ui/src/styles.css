@@ -1199,6 +1199,31 @@ select {
   background: color-mix(in srgb, var(--surface) 88%, var(--accent-color) 12%);
 }
 
+.about-architecture {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.about-architecture-diagrams {
+  display: grid;
+  gap: 1rem;
+}
+
+.about-architecture-diagram h4 {
+  margin: 0 0 0.5rem;
+}
+
+.about-architecture-diagram img {
+  display: block;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent-color) 20%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
 .settings-intro h2 {
   margin-bottom: 0.2rem;
 }

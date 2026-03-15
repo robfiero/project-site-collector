@@ -1,6 +1,6 @@
 # Today's Overview
 
-Today's Overview is a personal full-stack engineering project that explores a calm, operator-style dashboard for real-time signals such as news, local events, markets, weather, and environmental data. It is intentionally built as a production-style system rather than a prototype, with an emphasis on resilience, observability, incremental development, modern Java concurrency, and an AI-assisted engineering workflow.
+Today's Overview is a personal full-stack engineering project that explores a calm, operator-style dashboard for real-time signals such as news, local events, markets, weather, and environmental data. It is intentionally built as a production-style system rather than a prototype, with an emphasis on resilience, observability, incremental development, modern Java concurrency, and an AI-assisted engineering workflow. The backend also has a working AWS deployment path to a public HTTPS endpoint.
 
 This README is structured to work for multiple audiences:
 - A recruiter who wants a quick, clear overview
@@ -116,6 +116,90 @@ npm run dev
 
 The UI defaults to `http://localhost:5173` and expects the backend at `http://localhost:8080`.
 
+### Frontend API base URL
+
+The UI can be configured with `VITE_API_BASE_URL` for deployed builds. When unset, it falls back to same-origin relative `/api/...` paths for local development.
+
+Example (build-time):
+
+```bash
+VITE_API_BASE_URL=https://your-backend-service.awsapprunner.com npm run build
+```
+
+## Cloud deployment (AWS)
+
+### Deployment architecture
+
+The backend is deployed using:
+- Docker
+- Amazon ECR
+- AWS App Runner
+- AWS Systems Manager Parameter Store
+
+App Runner exposes the backend over HTTPS as a public service endpoint.
+
+### Reproducible image build and push
+
+The backend image must be built for `linux/amd64` (App Runner requires amd64). The working command is:
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  -f Dockerfile.backend \
+  -t 876067771140.dkr.ecr.us-east-1.amazonaws.com/todays-overview-backend:latest \
+  --push .
+```
+
+Inspect the published image:
+
+```bash
+docker buildx imagetools inspect 876067771140.dkr.ecr.us-east-1.amazonaws.com/todays-overview-backend:latest
+```
+
+The output should report:
+
+```
+Platform: linux/amd64
+```
+
+### AWS components used
+
+- Amazon ECR repository for backend images
+- AWS App Runner service for container hosting
+- AWS Systems Manager Parameter Store for API keys
+- App Runner instance role for SSM parameter access
+- App Runner ECR access role for pulling images
+
+### App Runner configuration
+
+- Container image:
+  `876067771140.dkr.ecr.us-east-1.amazonaws.com/todays-overview-backend:latest`
+- Port: `8080`
+- Health check protocol: `HTTP`
+- Health check path: `/api/health`
+- Runtime environment variables backed by SSM Parameter Store:
+  - `AIRNOW_API_KEY`
+  - `NYT_API_KEY`
+  - `TICKETMASTER_API_KEY`
+
+### Verification
+
+Health check smoke test:
+
+```bash
+curl -i https://<service>.awsapprunner.com/api/health
+```
+
+Successful deployment returns HTTP 200 with a payload similar to:
+
+```json
+{"status":"ok","buildTime":"","gitSha":"","version":"0.1.0-dev"}
+```
+
+### Deployment lesson learned
+
+Apple Silicon Docker builds produced `arm64` images that worked locally but failed on AWS App Runner. Explicitly targeting `linux/amd64` resolved the deployment issue.
+
 ## Repository scripts
 
 All scripts are at repo root and wrap common backend commands.
@@ -175,6 +259,17 @@ What it does:
 What it does:
 - Removes backend compiled outputs via Maven clean (`mvn clean`).
 - Removes `ui/dist` if present.
+
+### UI build and deployment
+
+- `./ui-build.sh`
+  - Installs UI dependencies and builds production assets into `ui/dist`.
+
+- `./ui-deploy-s3.sh <s3-bucket> [aws-profile]`
+  - Syncs `ui/dist` to an S3 bucket using `aws s3 sync --delete`.
+
+- `./ui-cloudfront-invalidate.sh <distribution-id> [paths] [aws-profile]`
+  - Creates a CloudFront invalidation (default paths: `/*`).
 
 ## Maven commands (direct)
 
@@ -475,11 +570,12 @@ Notes:
 
 ## Future improvements
 
-- Containerization / Docker
-- AWS deployment
-- Richer dashboard refinements
-- Continued observability and collector improvements
+- CloudFront + custom domain (Route 53)
+- CI/CD for container builds and deployments
+- Expanded observability and metrics
+- Architecture diagrams and deployment visuals
+- Continued dashboard and UX refinements
 
 ## Project status
 
-This is a personal engineering project and active learning system. It is not a production deployment.
+This is a personal engineering project and active learning system. The backend is deployed to AWS as a public demo/service environment, but it is not presented as a hardened production system.

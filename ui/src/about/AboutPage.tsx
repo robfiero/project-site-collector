@@ -94,6 +94,31 @@ export default function AboutPage() {
         </section>
       </section>
 
+      <section className="card about-architecture">
+        <h3>Architecture</h3>
+        <p className="meta section-description">
+          This project is designed as a production-style system. The diagrams below illustrate both the internal service architecture and the AWS deployment used to host the backend.
+        </p>
+        <div className="about-architecture-diagrams">
+          <div className="about-architecture-diagram">
+            <h4>System Architecture</h4>
+            <img
+              src="/architecture/system-architecture-diagram.png"
+              alt="System architecture diagram"
+              loading="lazy"
+            />
+          </div>
+          <div className="about-architecture-diagram">
+            <h4>AWS Deployment Architecture</h4>
+            <img
+              src="/architecture/aws-deployment-diagram.png"
+              alt="AWS deployment architecture diagram"
+              loading="lazy"
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="settings-grid">
         <section className="card">
           <h3>AI-Assisted Engineering Workflow</h3>
