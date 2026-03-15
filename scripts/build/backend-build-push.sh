@@ -3,6 +3,9 @@
 # Assumes AWS CLI is configured and authenticated.
 set -e
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
+
 AWS_REGION=us-east-1
 ACCOUNT_ID=876067771140
 REPOSITORY=todays-overview-backend
