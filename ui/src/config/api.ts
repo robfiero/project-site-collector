@@ -10,9 +10,8 @@ export function joinApiUrl(baseUrl: string, path: string): string {
   return `${baseUrl}${normalizedPath}`;
 }
 
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
-export const apiBaseUrl = normalizeApiBaseUrl(rawBaseUrl);
+export const API_BASE = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? '');
 
 export function apiUrl(path: string): string {
-  return joinApiUrl(apiBaseUrl, path);
+  return joinApiUrl(API_BASE, path);
 }

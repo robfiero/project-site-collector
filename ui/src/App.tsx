@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   fetchAdminEmailPreview,
@@ -23,6 +23,7 @@ import {
   resetSettings,
   resetPassword,
   saveMyPreferences,
+  setUnauthorizedHandler,
   signup,
   triggerCollectorRefresh,
   type AuthUserView,
@@ -59,12 +60,13 @@ import { loadWatchlist, loadZipCodes, saveWatchlist, saveZipCodes } from './pref
 const MAX_EVENTS = 200;
 const MAX_WATCHLIST = 25;
 const FALLBACK_DEFAULT_ZIPS = ['02108', '98101'];
-const FALLBACK_DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
+const FALLBACK_DEFAULT_WATCHLIST = ['DJIA', '^GSPC', 'ORCL', 'AAPL', 'SBUX', 'HD', 'DIS', 'MSFT', 'AMZN', 'BTC-USD', 'NFLX'];
 const FALLBACK_DEFAULT_NEWS_SOURCES = ['cnn', 'wsj', 'verge'];
 const DEFAULT_THEME_MODE = 'light';
 const DEFAULT_ACCENT = 'blue';
 const AUTH_TRANSITION_COLLECTORS = ['envCollector', 'rssCollector', 'localEventsCollector'];
 const INTENDED_ROUTE_KEY = 'todays-overview:intended-route';
+const NEWS_DEBUG_STORAGE_KEY = 'todays-overview:debug-news';
 const NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_ID: Record<string, string> = {
   abc: 'abcnews.go.com',
   cbs: 'cbsnews.com',
@@ -130,7 +132,7 @@ const NEWS_LOGO_BY_SOURCE_ID: Record<string, { src: string; alt: string }> = {
 type RouteName = 'home' | 'settings' | 'admin' | 'auth' | 'about' | 'forgot' | 'reset';
 type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed';
 type ThemeMode = 'light' | 'dark';
-type Accent = 'default' | 'gold' | 'blue' | 'green';
+type Accent = 'default' | 'gold' | 'blue' | 'green' | 'red' | 'orange' | 'yellow' | 'purple' | 'pink' | 'white' | 'lightGray' | 'darkGray' | 'black';
 
 const emptySnapshot: SignalsSnapshot = { sites: {}, news: {}, weather: {} };
 const emptyMarketsSnapshot: MarketsSnapshot = { status: 'ok', asOf: '', items: [] };
@@ -193,6 +195,18 @@ export default function App() {
   const [zipInput, setZipInput] = useState<string>('');
   const [symbolInput, setSymbolInput] = useState<string>('');
   const [userMenuOpen, setUserMenuOpen] = useState<boolean>(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
+  const newsDebugEnabled = useMemo(() => isNewsDebugEnabled(), []);
+  const logNewsDebug = useCallback((message: string, data?: Record<string, unknown>) => {
+    if (!newsDebugEnabled) {
+      return;
+    }
+    if (data) {
+      console.info('[news-debug]', message, data);
+    } else {
+      console.info('[news-debug]', message);
+    }
+  }, [newsDebugEnabled]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -202,11 +216,36 @@ export default function App() {
   const settingsSavedTimerRef = useRef<number | null>(null);
   const previousRouteRef = useRef<RouteName>(route);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const authRefreshTimerRef = useRef<number | null>(null);
+  const lastSavedZipCodesRef = useRef<string[]>(zipCodes);
+
+  const revalidateAuth = useCallback(async () => {
+    try {
+      const maybeMe = await fetchMe();
+      if (maybeMe) {
+        setAuthUser(maybeMe);
+        setSessionExpired(false);
+      } else {
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+      }
+    } catch {
+      // ignore revalidation errors
+    }
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => setRoute(readRouteFromHash());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+    };
   }, []);
 
   useEffect(() => {
@@ -256,6 +295,10 @@ export default function App() {
   }, [userMenuOpen]);
 
   useEffect(() => {
+    setMobileNavOpen(false);
+  }, [route]);
+
+  useEffect(() => {
     if (authUser) {
       return;
     }
@@ -302,6 +345,10 @@ export default function App() {
         }
         setHealth(healthResponse.status);
         setSnapshot(signalsResponse);
+        logNewsDebug('bootstrap snapshot', {
+          newsSourceCount: Object.keys(signalsResponse.news ?? {}).length,
+          newsSources: Object.keys(signalsResponse.news ?? {}).slice(0, 12)
+        });
         setEvents(eventsResponse.map(normalizeEventEnvelope).filter((e): e is EventEnvelope => e !== null).slice(-MAX_EVENTS));
         setMetrics(metricsResponse);
         setMetricsUpdatedAt(Date.now());
@@ -315,6 +362,12 @@ export default function App() {
             ? defaultsResponse.defaultSelectedNewsSources
             : newsSourceSettings.effectiveSelectedSources
         });
+        logNewsDebug('bootstrap news defaults', {
+          defaultsNewsSources: defaultsResponse.defaultNewsSources.length,
+          defaultsSelectedNewsSources: defaultsResponse.defaultSelectedNewsSources ?? [],
+          settingsAvailableSources: newsSourceSettings.availableSources.length,
+          settingsEffectiveSelectedSources: newsSourceSettings.effectiveSelectedSources
+        });
         setConfigView(configResponse);
         setAuthUser(meResponse);
         setSessionExpired(false);
@@ -322,10 +375,16 @@ export default function App() {
         setSelectedNewsSourceIds(newsSourceSettings.effectiveSelectedSources.length > 0
           ? newsSourceSettings.effectiveSelectedSources
           : (defaultsResponse.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES));
+        logNewsDebug('bootstrap selected news sources', {
+          selectedNewsSourceIds: newsSourceSettings.effectiveSelectedSources.length > 0
+            ? newsSourceSettings.effectiveSelectedSources
+            : (defaultsResponse.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES)
+        });
         if (meResponse) {
           try {
             const prefs = await fetchMyPreferences();
             setZipCodes(prefs.zipCodes);
+            lastSavedZipCodesRef.current = prefs.zipCodes;
             setWatchlist(prefs.watchlist);
             setSelectedNewsSourceIds(
               prefs.newsSourceIds.length > 0
@@ -336,6 +395,11 @@ export default function App() {
             );
             setThemeMode(prefs.themeMode);
             setAccent(prefs.accent);
+            logNewsDebug('bootstrap user preferences', {
+              newsSourceIds: prefs.newsSourceIds,
+              zipCodes: prefs.zipCodes,
+              watchlist: prefs.watchlist
+            });
           } catch (prefError) {
             if (isUnauthorizedError(prefError)) {
               handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
@@ -442,7 +506,7 @@ export default function App() {
         return;
       }
       setConnectionState((state) => (state === 'open' ? state : 'connecting'));
-      const source = new EventSource(apiUrl('/api/stream'));
+      const source = new EventSource(apiUrl('/api/stream'), { withCredentials: true });
       eventSourceRef.current = source;
 
       source.onopen = () => {
@@ -464,11 +528,23 @@ export default function App() {
           setSnapshot((previous) => applyOptimisticUpdate(previous, normalized));
           setEnvByZip((previous) => applyEnvironmentUpdate(previous, normalized));
           if (normalized.type === 'NewsUpdated' && newsRefreshTimerRef.current === null) {
+            if (newsDebugEnabled) {
+              const event = normalized.event as { source?: string; storyCount?: number };
+              logNewsDebug('sse NewsUpdated', {
+                source: event?.source,
+                storyCount: event?.storyCount,
+                timestampEpochMillis: normalized.timestampEpochMillis
+              });
+            }
             newsRefreshTimerRef.current = window.setTimeout(async () => {
               newsRefreshTimerRef.current = null;
               try {
                 const refreshedSignals = await fetchSignals();
                 setSnapshot(refreshedSignals);
+                logNewsDebug('news refresh snapshot', {
+                  newsSourceCount: Object.keys(refreshedSignals.news ?? {}).length,
+                  newsSources: Object.keys(refreshedSignals.news ?? {}).slice(0, 12)
+                });
               } catch {
                 // keep existing snapshot if refresh fails
               }
@@ -487,6 +563,9 @@ export default function App() {
         if (disposed) {
           return;
         }
+        if (authUser) {
+          void revalidateAuth();
+        }
         setConnectionState('reconnecting');
         const wait = retryDelayRef.current;
         retryDelayRef.current = Math.min(retryDelayRef.current * 2, 10_000);
@@ -501,12 +580,29 @@ export default function App() {
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
       }
+      if (authRefreshTimerRef.current !== null) {
+        window.clearTimeout(authRefreshTimerRef.current);
+      }
       if (newsRefreshTimerRef.current !== null) {
         window.clearTimeout(newsRefreshTimerRef.current);
       }
       eventSourceRef.current?.close();
     };
-  }, []);
+  }, [authUser, revalidateAuth]);
+
+  useEffect(() => {
+    if (authRefreshTimerRef.current !== null) {
+      window.clearTimeout(authRefreshTimerRef.current);
+    }
+    authRefreshTimerRef.current = window.setTimeout(() => {
+      void revalidateAuth();
+    }, 15 * 60 * 1000);
+    return () => {
+      if (authRefreshTimerRef.current !== null) {
+        window.clearTimeout(authRefreshTimerRef.current);
+      }
+    };
+  }, [revalidateAuth]);
 
   useEffect(() => {
     if (eventFeedPaused || pausedEventBuffer.length === 0) {
@@ -515,6 +611,21 @@ export default function App() {
     setEvents((previous) => [...previous, ...pausedEventBuffer].slice(-MAX_EVENTS));
     setPausedEventBuffer([]);
   }, [eventFeedPaused, pausedEventBuffer]);
+
+  useEffect(() => {
+    if (!newsDebugEnabled) {
+      return;
+    }
+    const newsKeys = Object.keys(snapshot.news ?? {});
+    const missingSelected = selectedNewsSourceIds.filter((id) => !newsKeys.includes(id));
+    logNewsDebug('news selection vs snapshot', {
+      selectedNewsSourceIds,
+      selectedCount: selectedNewsSourceIds.length,
+      snapshotNewsCount: newsKeys.length,
+      snapshotNewsSources: newsKeys.slice(0, 12),
+      missingSelected
+    });
+  }, [newsDebugEnabled, snapshot.news, selectedNewsSourceIds, logNewsDebug]);
 
   const filteredEvents = useMemo(() => filterEvents(events, eventTypeFilter, searchQuery), [events, eventTypeFilter, searchQuery]);
   const siteEntries = useMemo(() => Object.values(snapshot.sites).sort((a, b) => a.siteId.localeCompare(b.siteId)), [snapshot.sites]);
@@ -627,46 +738,54 @@ export default function App() {
     document.documentElement.dataset.accent = accent;
   }, [themeMode, accent]);
 
-  const addZip = (): 'added' | 'invalid' | 'duplicate' | 'limit' => {
-    const value = zipInput.trim();
-    if (!/^\d{5}$/.test(value)) {
-      return 'invalid';
-    }
-    let outcome: 'added' | 'duplicate' | 'limit' = 'added';
+  const addZip = (): ZipAddResult => {
+    const parsed = parseZipInput(zipInput);
+    let limitHit = false;
+    const added: string[] = [];
+    const duplicates: string[] = [];
     setZipCodes((previous) => {
-      if (previous.includes(value)) {
-        outcome = 'duplicate';
-        return previous;
-      }
-      if (previous.length >= 10) {
-        outcome = 'limit';
-        return previous;
-      }
-      return [...previous, value];
+      const next = [...previous];
+      parsed.valid.forEach((zip) => {
+        if (next.includes(zip)) {
+          duplicates.push(zip);
+          return;
+        }
+        if (next.length >= 10) {
+          limitHit = true;
+          return;
+        }
+        next.push(zip);
+        added.push(zip);
+      });
+      return next;
     });
     setZipInput('');
-    return outcome;
+    return { added, duplicates, invalid: parsed.invalid, limitHit };
   };
 
-  const addSymbol = (): 'added' | 'invalid' | 'duplicate' | 'limit' => {
-    const value = symbolInput.trim().toUpperCase();
-    if (!value) {
-      return 'invalid';
-    }
-    let outcome: 'added' | 'duplicate' | 'limit' = 'added';
+  const addSymbol = (): SymbolAddResult => {
+    const parsed = parseSymbolInput(symbolInput);
+    let limitHit = false;
+    const added: string[] = [];
+    const duplicates: string[] = [];
     setWatchlist((previous) => {
-      if (previous.includes(value)) {
-        outcome = 'duplicate';
-        return previous;
-      }
-      if (previous.length >= MAX_WATCHLIST) {
-        outcome = 'limit';
-        return previous;
-      }
-      return [...previous, value];
+      const next = [...previous];
+      parsed.valid.forEach((symbol) => {
+        if (next.includes(symbol)) {
+          duplicates.push(symbol);
+          return;
+        }
+        if (next.length >= MAX_WATCHLIST) {
+          limitHit = true;
+          return;
+        }
+        next.push(symbol);
+        added.push(symbol);
+      });
+      return next;
     });
     setSymbolInput('');
-    return outcome;
+    return { added, duplicates, invalid: parsed.invalid, limitHit };
   };
 
   const reorderByValue = <T extends string>(values: T[], source: T, target: T): T[] => {
@@ -738,6 +857,7 @@ export default function App() {
       return;
     }
       setSettingsSaveState('saving');
+      const zipChanged = zipCodes.join(',') !== lastSavedZipCodesRef.current.join(',');
       saveMyPreferences({
         zipCodes,
         watchlist,
@@ -745,6 +865,10 @@ export default function App() {
         themeMode,
         accent
       }).then(() => {
+      if (zipChanged) {
+        lastSavedZipCodesRef.current = [...zipCodes];
+        void refreshAfterZipSave(zipCodes);
+      }
       setSettingsSaveState('saved');
       if (settingsSavedTimerRef.current !== null) {
         window.clearTimeout(settingsSavedTimerRef.current);
@@ -771,6 +895,34 @@ export default function App() {
   const refreshAfterAuthTransition = async (targetZips: string[]) => {
     try {
       await triggerCollectorRefresh(AUTH_TRANSITION_COLLECTORS);
+    } catch {
+      // Continue with snapshot refresh even when manual collector refresh is unavailable.
+    }
+
+    try {
+      const nextSnapshot = await fetchSignals();
+      setSnapshot(nextSnapshot);
+    } catch {
+      // Keep existing snapshot if fetch fails.
+    }
+
+    try {
+      const statuses = await fetchEnvironment(normalizeZipCodes(targetZips));
+      setEnvByZip(
+        Object.fromEntries(
+          statuses
+            .map((status) => ({ ...status, zip: normalizeZip(status.zip) ?? status.zip }))
+            .map((status) => [status.zip, status])
+        ) as Record<string, EnvStatus>
+      );
+    } catch {
+      // Keep existing env status if refresh fails.
+    }
+  };
+
+  const refreshAfterZipSave = async (targetZips: string[]) => {
+    try {
+      await triggerCollectorRefresh(['envCollector', 'localEventsCollector']);
     } catch {
       // Continue with snapshot refresh even when manual collector refresh is unavailable.
     }
@@ -851,7 +1003,26 @@ export default function App() {
           <div className="card header-card">
             <div className="header-top">
               <h1>Today&apos;s Overview</h1>
-              <nav className="nav">
+              <button
+                className="mobile-nav-button"
+                type="button"
+                aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={mobileNavOpen}
+                aria-controls="primary-nav"
+                onClick={() => setMobileNavOpen((open) => !open)}
+              >
+                <span aria-hidden="true">☰</span>
+              </button>
+              <nav
+                id="primary-nav"
+                className={`nav${mobileNavOpen ? ' nav-open' : ''}`}
+                onClick={(event) => {
+                  const target = event.target as HTMLElement;
+                  if (target.closest('a')) {
+                    setMobileNavOpen(false);
+                  }
+                }}
+              >
                 <a href="#/" className={route === 'home' ? 'active' : ''}>Home</a>
                 {authUser && <a href="#/settings" className={route === 'settings' ? 'active' : ''}>Settings</a>}
                 <a href="#/admin" className={route === 'admin' ? 'active' : ''}>Admin / Diagnostics</a>
@@ -974,6 +1145,7 @@ export default function App() {
                 return previous.filter((id) => id !== sourceId);
               });
             }}
+            onUpdateNewsSources={(next) => setSelectedNewsSourceIds(next)}
             onRestoreNewsSources={restoreNewsSourceDefaults}
             onThemeModeChange={setThemeMode}
             onAccentChange={setAccent}
@@ -1014,6 +1186,7 @@ export default function App() {
                 try {
                   const prefs = await fetchMyPreferences();
                   setZipCodes(prefs.zipCodes);
+                  lastSavedZipCodesRef.current = prefs.zipCodes;
                   setWatchlist(prefs.watchlist);
                   setSelectedNewsSourceIds(
                     prefs.newsSourceIds.length > 0
@@ -1081,6 +1254,8 @@ export default function App() {
             siteEntries={siteEntries}
             catalogDefaults={catalogDefaults}
             configView={configView}
+            selectedNewsSourceIds={selectedNewsSourceIds}
+            newsSnapshot={snapshot.news}
             filteredEvents={filteredEvents}
             eventTypeFilter={eventTypeFilter}
             setEventTypeFilter={setEventTypeFilter}
@@ -1130,11 +1305,25 @@ type HomePageProps = {
 };
 
 function HomePage(props: HomePageProps) {
+  const sortedWeatherZips = [...props.zipCodes].sort((a, b) => {
+    const normalizedA = normalizeZip(a) ?? a;
+    const normalizedB = normalizeZip(b) ?? b;
+    const labelA = props.envByZip[normalizedA]?.locationLabel ?? formatPlaceLabel(normalizedA);
+    const labelB = props.envByZip[normalizedB]?.locationLabel ?? formatPlaceLabel(normalizedB);
+    return compareLocationLabels(labelA, labelB);
+  });
+
+  const sortedHappenings = [...props.happeningsEntries].sort((a, b) => {
+    const labelA = a.location.startsWith('lat:') ? 'Local area' : formatPlaceLabel(a.location);
+    const labelB = b.location.startsWith('lat:') ? 'Local area' : formatPlaceLabel(b.location);
+    return compareLocationLabels(labelA, labelB);
+  });
+
   return (
     <main>
       <section className="primary-grid">
         <section className="card weather">
-          <h2>Environment</h2>
+          <h2>Weather & Air Quality</h2>
           {props.zipCodes.length === 0 ? (
             <p className="empty">No ZIP codes selected. Add places in Settings.</p>
           ) : (
@@ -1142,13 +1331,13 @@ function HomePage(props: HomePageProps) {
               <table className="weather-table">
                 <thead>
                   <tr>
-                    <th>Place</th>
+                    <th>City</th>
                     <th>Current Weather</th>
                     <th>Air Quality</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {props.zipCodes.map((zip) => {
+                  {sortedWeatherZips.map((zip) => {
                     const normalizedZip = normalizeZip(zip) ?? zip;
                     const env = props.envByZip[normalizedZip] ?? props.envByZip[zip];
                     return (
@@ -1237,7 +1426,7 @@ function HomePage(props: HomePageProps) {
             {!props.happeningsLoading && props.happeningsEntries.length === 0 ? (
               <p className="empty">No local events found for your ZIP codes yet.</p>
             ) : null}
-            {!props.happeningsLoading && props.happeningsEntries.map((entry) => (
+            {!props.happeningsLoading && sortedHappenings.map((entry) => (
               <article key={entry.location} className="item">
                 <h3>{entry.location.startsWith('lat:') ? 'Local area' : formatPlaceLabel(entry.location)}</h3>
                 <ul>
@@ -1330,18 +1519,32 @@ function isValidHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(trimmed);
 }
 
+type ZipAddResult = {
+  added: string[];
+  duplicates: string[];
+  invalid: string[];
+  limitHit: boolean;
+};
+
+type SymbolAddResult = {
+  added: string[];
+  duplicates: string[];
+  invalid: string[];
+  limitHit: boolean;
+};
+
 type SettingsPageProps = {
   zipCodes: string[];
   resolveZipLabel: (zip: string) => string;
   zipInput: string;
   setZipInput: Dispatch<SetStateAction<string>>;
-  addZip: () => 'added' | 'invalid' | 'duplicate' | 'limit';
+  addZip: () => ZipAddResult;
   removeZip: (zip: string) => void;
   reorderZip: (sourceZip: string, targetZip: string) => void;
   watchlist: string[];
   symbolInput: string;
   setSymbolInput: Dispatch<SetStateAction<string>>;
-  addSymbol: () => 'added' | 'invalid' | 'duplicate' | 'limit';
+  addSymbol: () => SymbolAddResult;
   maxWatchlist: number;
   saveState: 'idle' | 'saving' | 'saved';
   removeSymbol: (symbol: string) => void;
@@ -1353,6 +1556,7 @@ type SettingsPageProps = {
   themeMode: ThemeMode;
   accent: Accent;
   onToggleNewsSource: (sourceId: string, checked: boolean) => void;
+  onUpdateNewsSources: (next: string[]) => void;
   onRestoreNewsSources: () => void;
   onThemeModeChange: (value: ThemeMode) => void;
   onAccentChange: (value: Accent) => void;
@@ -1361,15 +1565,22 @@ type SettingsPageProps = {
 };
 
 function SettingsPage(props: SettingsPageProps) {
-  const zipCandidate = props.zipInput.trim();
-  const symbolCandidate = props.symbolInput.trim().toUpperCase();
-  const zipValid = /^\d{5}$/.test(zipCandidate);
-  const symbolValid = symbolCandidate.length > 0;
+  const zipParse = parseZipInput(props.zipInput);
+  const symbolParse = parseSymbolInput(props.symbolInput);
+  const zipHasValid = zipParse.valid.length > 0;
+  const zipHasInvalid = zipParse.invalid.length > 0;
+  const symbolHasValid = symbolParse.valid.length > 0;
+  const symbolHasInvalid = symbolParse.invalid.length > 0;
   const [zipHint, setZipHint] = useState<string>('');
   const [symbolHint, setSymbolHint] = useState<string>('');
   const [deleteHint, setDeleteHint] = useState<string>('');
   const [draggingZip, setDraggingZip] = useState<string | null>(null);
   const [draggingSymbol, setDraggingSymbol] = useState<string | null>(null);
+  const selectableSourceIds = props.availableNewsSources
+    .filter((source) => source.requiresConfig !== true)
+    .map((source) => source.id);
+  const selectedSelectableCount = selectableSourceIds.filter((id) => props.selectedNewsSourceIds.includes(id)).length;
+  const allSourcesSelected = selectableSourceIds.length > 0 && selectedSelectableCount === selectableSourceIds.length;
 
   return (
     <main className="settings-page">
@@ -1400,12 +1611,16 @@ function SettingsPage(props: SettingsPageProps) {
             onSubmit={(e) => {
               e.preventDefault();
               const result = props.addZip();
-              if (result === 'invalid') {
-                setZipHint('Enter a 5-digit ZIP');
-              } else if (result === 'duplicate') {
+              if (result.invalid.length > 0) {
+                setZipHint(`Invalid ZIPs: ${result.invalid.join(', ')}`);
+              } else if (result.added.length === 0 && result.duplicates.length === 0 && !result.limitHit) {
+                setZipHint('Enter 5-digit ZIPs separated by commas.');
+              } else if (result.added.length === 0 && result.duplicates.length > 0) {
                 setZipHint('Already added');
-              } else if (result === 'limit') {
+              } else if (result.limitHit && result.added.length === 0) {
                 setZipHint('You can add up to 10 ZIP codes');
+              } else if (result.added.length > 0 && result.duplicates.length > 0) {
+                setZipHint(`Added ${result.added.length}, skipped ${result.duplicates.length} duplicate`);
               } else {
                 setZipHint('');
               }
@@ -1417,14 +1632,14 @@ function SettingsPage(props: SettingsPageProps) {
               aria-label="ZIP code"
               value={props.zipInput}
               onChange={(e) => {
-                props.setZipInput(e.target.value.replace(/\D/g, '').slice(0, 5));
+                props.setZipInput(e.target.value.replace(/[^\d,\s]/g, ''));
                 setZipHint('');
               }}
-              placeholder="ZIP (e.g., 02108)"
+              placeholder="ZIPs (e.g., 02108, 98101)"
             />
-            <button type="submit" disabled={!zipValid}>Add ZIP</button>
+            <button type="submit" disabled={!zipHasValid}>Add ZIPs</button>
           </form>
-          {zipCandidate.length > 0 && !zipValid && <p className="meta inline-hint">Enter a 5-digit ZIP</p>}
+          {props.zipInput.trim().length > 0 && zipHasInvalid && <p className="meta inline-hint">Enter 5-digit ZIPs separated by commas.</p>}
           {zipHint && <p className="meta inline-hint">{zipHint}</p>}
           <div className="chips">
             {props.zipCodes.map((zip) => (
@@ -1482,12 +1697,16 @@ function SettingsPage(props: SettingsPageProps) {
             onSubmit={(e) => {
               e.preventDefault();
               const result = props.addSymbol();
-              if (result === 'invalid') {
-                setSymbolHint('Enter a symbol (e.g., NVDA)');
-              } else if (result === 'duplicate') {
+              if (result.invalid.length > 0) {
+                setSymbolHint(`Invalid symbols: ${result.invalid.join(', ')}`);
+              } else if (result.added.length === 0 && result.duplicates.length === 0 && !result.limitHit) {
+                setSymbolHint('Enter comma-separated symbols.');
+              } else if (result.added.length === 0 && result.duplicates.length > 0) {
                 setSymbolHint('Already added');
-              } else if (result === 'limit') {
+              } else if (result.limitHit && result.added.length === 0) {
                 setSymbolHint(`You can add up to ${props.maxWatchlist} symbols`);
+              } else if (result.added.length > 0 && result.duplicates.length > 0) {
+                setSymbolHint(`Added ${result.added.length}, skipped ${result.duplicates.length} duplicate`);
               } else {
                 setSymbolHint('');
               }
@@ -1499,14 +1718,14 @@ function SettingsPage(props: SettingsPageProps) {
               aria-label="Market symbol"
               value={props.symbolInput}
               onChange={(e) => {
-                props.setSymbolInput(e.target.value.toUpperCase().replace(/\s+/g, ''));
+                props.setSymbolInput(e.target.value.toUpperCase().replace(/[^A-Z0-9,.\-\s]/g, ''));
                 setSymbolHint('');
               }}
-              placeholder="Symbol (e.g., NVDA)"
+              placeholder="Symbols (e.g., AAPL, MSFT, BTC-USD)"
             />
-            <button type="submit" disabled={!symbolValid}>Add Symbol</button>
+            <button type="submit" disabled={!symbolHasValid}>Add Symbols</button>
           </form>
-          {props.symbolInput.length > 0 && !symbolValid && <p className="meta inline-hint">Enter a symbol (e.g., NVDA)</p>}
+          {props.symbolInput.trim().length > 0 && symbolHasInvalid && <p className="meta inline-hint">Enter comma-separated symbols.</p>}
           {symbolHint && <p className="meta inline-hint">{symbolHint}</p>}
           <div className="chips">
             {props.watchlist.map((symbol) => (
@@ -1581,6 +1800,15 @@ function SettingsPage(props: SettingsPageProps) {
                 <option value="gold">Gold</option>
                 <option value="blue">Blue</option>
                 <option value="green">Green</option>
+                <option value="red">Red</option>
+                <option value="orange">Orange</option>
+                <option value="yellow">Yellow</option>
+                <option value="purple">Purple</option>
+                <option value="pink">Pink</option>
+                <option value="white">White</option>
+                <option value="lightGray">Light Gray</option>
+                <option value="darkGray">Dark Gray</option>
+                <option value="black">Black</option>
               </select>
             </label>
           </div>
@@ -1600,6 +1828,27 @@ function SettingsPage(props: SettingsPageProps) {
             </button>
           </div>
           <p className="meta">Choose which sources appear in your news feed.</p>
+          <div className="news-source-select-all">
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => props.onUpdateNewsSources(selectableSourceIds)}
+            >
+              Select all
+            </button>
+            {selectedSelectableCount > 0 && !allSourcesSelected && <span className="meta small">(partial)</span>}
+            {selectedSelectableCount > 0 && (
+              <button
+                type="button"
+                className="link-button inline"
+                onClick={() => props.onUpdateNewsSources(
+                  props.selectedNewsSourceIds.filter((id) => !selectableSourceIds.includes(id))
+                )}
+              >
+                Clear all
+              </button>
+            )}
+          </div>
           <div className="news-source-grid">
             {props.availableNewsSources.map((source) => {
               const checked = props.selectedNewsSourceIds.includes(source.id);
@@ -1823,6 +2072,9 @@ function UnifiedAuthPage(props: UnifiedAuthPageProps) {
             Create Account
           </button>
         </div>
+        <p className="meta auth-helper">
+          Sign in or create an account to personalize your dashboard with your own news, weather, and market preferences.
+        </p>
         <AuthPage
           key={props.mode}
           embedded
@@ -2032,6 +2284,47 @@ function normalizeZip(value: string): string | null {
   return /^\d{5}$/.test(trimmed) ? trimmed : null;
 }
 
+function parseZipInput(raw: string): { valid: string[]; invalid: string[] } {
+  const tokens = raw.split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+  tokens.forEach((token) => {
+    const normalized = normalizeZip(token);
+    if (!normalized) {
+      invalid.push(token);
+      return;
+    }
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      valid.push(normalized);
+    }
+  });
+  return { valid, invalid };
+}
+
+function parseSymbolInput(raw: string): { valid: string[]; invalid: string[] } {
+  const tokens = raw.split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+  tokens.forEach((token) => {
+    const normalized = token.replace(/\s+/g, '').toUpperCase();
+    if (!normalized) {
+      return;
+    }
+    if (!/^[A-Z0-9.\-]+$/.test(normalized)) {
+      invalid.push(token);
+      return;
+    }
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      valid.push(normalized);
+    }
+  });
+  return { valid, invalid };
+}
+
 function normalizeZipCodes(values: string[]): string[] {
   const normalized = new Set<string>();
   values.forEach((value) => {
@@ -2175,6 +2468,33 @@ function NewsSourceFavicon({ sourceId, sourceLabel, sourceUrl }: {
   );
 }
 
+function compareLocationLabels(left: string, right: string): number {
+  const a = extractLocationSortParts(left);
+  const b = extractLocationSortParts(right);
+  const stateCompare = a.state.localeCompare(b.state, undefined, { sensitivity: 'base' });
+  if (stateCompare !== 0) {
+    return stateCompare;
+  }
+  return a.city.localeCompare(b.city, undefined, { sensitivity: 'base' });
+}
+
+function extractLocationSortParts(label: string): { state: string; city: string } {
+  const trimmed = label.trim();
+  if (!trimmed) {
+    return { state: 'ZZZ', city: '' };
+  }
+  const base = trimmed.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const parts = base.split(',');
+  if (parts.length >= 2) {
+    const city = parts[0].trim();
+    const state = parts[1].trim();
+    if (state) {
+      return { state, city };
+    }
+  }
+  return { state: 'ZZZ', city: base };
+}
+
 function weatherIcon(conditions: string): string {
   const value = conditions.toLowerCase();
   if (value.includes('rain') || value.includes('storm')) {
@@ -2206,6 +2526,25 @@ function formatInstant(value: string | number | null | undefined): string {
     return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
   }
   return String(value);
+}
+
+function isNewsDebugEnabled(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const stored = window.localStorage?.getItem(NEWS_DEBUG_STORAGE_KEY);
+  if (stored && stored.trim().toLowerCase() === 'true') {
+    return true;
+  }
+  const hash = window.location.hash ?? '';
+  if (hash.includes('debugNews=true') || hash.includes('debug-news')) {
+    return true;
+  }
+  const search = window.location.search ?? '';
+  if (search.includes('debugNews=true')) {
+    return true;
+  }
+  return false;
 }
 
 function sparklinePoints(symbol: string, change: number): string {

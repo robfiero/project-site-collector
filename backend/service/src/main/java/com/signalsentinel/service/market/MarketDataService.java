@@ -13,6 +13,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -28,16 +32,28 @@ public final class MarketDataService {
     private final URI endpoint;
     private final Duration timeout;
     private final Clock clock;
-    private final Duration cacheTtl;
+    private final Duration cacheTtlOpen;
+    private final Duration cacheTtlClosed;
+    private final ZoneId marketZone;
     private final Map<String, CachedSnapshot> cacheBySymbolKey = new HashMap<>();
     private final Map<String, String> lastFailureBySymbolKey = new HashMap<>();
 
-    public MarketDataService(HttpClient httpClient, String baseUrl, Duration timeout, Clock clock, Duration cacheTtl) {
+    public MarketDataService(
+            HttpClient httpClient,
+            String baseUrl,
+            Duration timeout,
+            Clock clock,
+            Duration cacheTtlOpen,
+            Duration cacheTtlClosed,
+            ZoneId marketZone
+    ) {
         this.httpClient = httpClient;
         this.endpoint = URI.create(baseUrl);
         this.timeout = timeout;
         this.clock = clock;
-        this.cacheTtl = cacheTtl;
+        this.cacheTtlOpen = cacheTtlOpen;
+        this.cacheTtlClosed = cacheTtlClosed;
+        this.marketZone = marketZone;
     }
 
     public synchronized MarketSnapshot fetch(List<String> symbols) {
@@ -63,7 +79,7 @@ public final class MarketDataService {
                 List<MarketQuoteSignal> fallback = fetchViaChartFallback(normalized);
                 if (!fallback.isEmpty()) {
                     MarketSnapshot snapshot = new MarketSnapshot("ok", now, fallback, null, false);
-                    cacheBySymbolKey.put(symbolKey, new CachedSnapshot(snapshot, now.plus(cacheTtl)));
+                    cacheBySymbolKey.put(symbolKey, new CachedSnapshot(snapshot, now.plus(currentTtl(now))));
                     lastFailureBySymbolKey.remove(symbolKey);
                     LOGGER.info(() -> "Markets upstream status=" + status + " quoteFallback=chart records=" + fallback.size() + " symbols=" + symbolKey);
                     return snapshot;
@@ -79,7 +95,7 @@ public final class MarketDataService {
             }
 
             MarketSnapshot snapshot = new MarketSnapshot("ok", now, parsed, null, false);
-            cacheBySymbolKey.put(symbolKey, new CachedSnapshot(snapshot, now.plus(cacheTtl)));
+            cacheBySymbolKey.put(symbolKey, new CachedSnapshot(snapshot, now.plus(currentTtl(now))));
             lastFailureBySymbolKey.remove(symbolKey);
             LOGGER.info(() -> "Markets upstream status=200 records=" + parsed.size() + " symbols=" + symbolKey);
             return snapshot;
@@ -134,6 +150,20 @@ public final class MarketDataService {
         }
         lastFailureBySymbolKey.put(symbolKey, reason);
         LOGGER.warning("Markets upstream failure symbols=" + symbolKey + " reason=" + reason);
+    }
+
+    private Duration currentTtl(Instant now) {
+        return isMarketOpen(now, marketZone) ? cacheTtlOpen : cacheTtlClosed;
+    }
+
+    static boolean isMarketOpen(Instant instant, ZoneId zone) {
+        ZonedDateTime eastern = instant.atZone(zone);
+        DayOfWeek day = eastern.getDayOfWeek();
+        if (day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY) {
+            return false;
+        }
+        LocalTime time = eastern.toLocalTime();
+        return !time.isBefore(LocalTime.of(9, 30)) && time.isBefore(LocalTime.of(16, 0));
     }
 
     private URI buildUri(List<String> symbols) {

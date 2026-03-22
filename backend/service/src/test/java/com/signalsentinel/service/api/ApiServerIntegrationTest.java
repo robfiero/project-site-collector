@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,6 +58,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiServerIntegrationTest {
     private ApiServer apiServer;
+    private static final Set<String> DEFAULT_ALLOWED_ORIGINS = Set.of(
+            "http://localhost:5173",
+            "https://deyyrubsvhyt8.cloudfront.net"
+    );
 
     @AfterEach
     void tearDown() {
@@ -77,6 +82,63 @@ class ApiServerIntegrationTest {
 
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("\"status\":\"ok\""));
+    }
+
+    @Test
+    void corsAllowsKnownOrigin() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+        String origin = "http://localhost:5173";
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/health"))
+                        .header("Origin", origin)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, response.statusCode());
+        assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElse(null));
+        assertTrue(response.headers().firstValue("Vary").orElse("").contains("Origin"));
+        assertEquals("true", response.headers().firstValue("Access-Control-Allow-Credentials").orElse(null));
+    }
+
+    @Test
+    void corsBlocksUnknownOrigin() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/health"))
+                        .header("Origin", "https://unknown.example")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
+    }
+
+    @Test
+    void corsPreflightReturnsNoContent() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+        String origin = "http://localhost:5173";
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/health"))
+                        .header("Origin", origin)
+                        .header("Access-Control-Request-Method", "GET")
+                        .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(204, response.statusCode());
+        assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElse(null));
+        assertTrue(response.headers().firstValue("Access-Control-Allow-Methods").orElse("").contains("GET"));
     }
 
     @Test
@@ -486,16 +548,19 @@ class ApiServerIntegrationTest {
     void corsPreflightReturnsExpectedHeaders() throws Exception {
         TestRuntime runtime = startRuntime();
         HttpClient client = HttpClient.newHttpClient();
+        String origin = "http://localhost:5173";
 
         HttpResponse<String> response = client.send(
                 HttpRequest.newBuilder(runtime.uri("/api/health"))
+                        .header("Origin", origin)
+                        .header("Access-Control-Request-Method", "GET")
                         .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
                         .build(),
                 HttpResponse.BodyHandlers.ofString()
         );
 
         assertEquals(204, response.statusCode());
-        assertEquals("*", response.headers().firstValue("Access-Control-Allow-Origin").orElse(""));
+        assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElse(""));
         assertTrue(response.headers().firstValue("Access-Control-Allow-Methods").orElse("").contains("GET"));
     }
 
@@ -1279,9 +1344,12 @@ class ApiServerIntegrationTest {
                 null,
                 envService,
                 null,
-                authEnabled,
+                false,
+                "Lax",
                 prefsEnabled,
-                null
+                null,
+                DEFAULT_ALLOWED_ORIGINS,
+                true
         );
         apiServer.start();
 

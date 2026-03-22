@@ -12,7 +12,7 @@ public final class CatalogDefaults {
                 "defaultZipCodes", List.of("02108", "98101"),
                 "defaultNewsSources", NewsSourceCatalog.asApiList(),
                 "defaultSelectedNewsSources", NewsSourceCatalog.defaultSelectedSourceIds(),
-                "defaultWatchlist", List.of("AAPL", "MSFT", "SPY", "BTC-USD", "ETH-USD")
+                "defaultWatchlist", List.of("DJIA", "^GSPC", "ORCL", "AAPL", "SBUX", "HD", "DIS", "MSFT", "AMZN", "BTC-USD", "NFLX")
         );
     }
 }

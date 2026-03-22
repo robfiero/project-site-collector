@@ -25,12 +25,11 @@ DIST_ID="$1"
 PATHS="${2-/*}"
 PROFILE="${3-}"
 
-PROFILE_ARGS=()
-if [[ -n "$PROFILE" ]]; then
-  PROFILE_ARGS+=(--profile "$PROFILE")
-fi
-
 echo "Creating CloudFront invalidation for distribution $DIST_ID (paths: $PATHS)..."
-aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "$PATHS" "${PROFILE_ARGS[@]}"
+if [[ -n "$PROFILE" ]]; then
+  aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "$PATHS" --profile "$PROFILE"
+else
+  aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "$PATHS"
+fi
 
 echo "Invalidation request submitted."

@@ -9,6 +9,7 @@ import type {
   CollectorStatus,
   EventEnvelope,
   MetricsResponse,
+  NewsSignal,
   SignalsSnapshot,
   TrendPoint
 } from '../models';
@@ -27,6 +28,8 @@ type AdminDashboardProps = {
   siteEntries: SignalsSnapshot['sites'][string][];
   catalogDefaults: CatalogDefaults;
   configView: Record<string, unknown>;
+  selectedNewsSourceIds: string[];
+  newsSnapshot: SignalsSnapshot['news'];
   filteredEvents: EventEnvelope[];
   eventTypeFilter: string;
   setEventTypeFilter: Dispatch<SetStateAction<string>>;
@@ -67,6 +70,38 @@ export default function AdminDashboard(props: AdminDashboardProps) {
     localEvents: filterTrendPointsForWindow(localEventsTrend, trendWindowMinutes, props.trends.bucketSeconds, latestTrendPointTime)
   };
   const trendWindowLabel = trendWindow === '60m' ? 'Showing last 60 minutes' : trendWindow === '6h' ? 'Showing last 6 hours' : 'Showing last 24 hours';
+  const availableNewsSources = props.catalogDefaults.defaultNewsSources ?? [];
+  const availableSourceIds = availableNewsSources
+    .map((source) => (typeof source.id === 'string' ? source.id : null))
+    .filter((value): value is string => Boolean(value));
+  const availableById = new Map(
+    availableNewsSources
+      .filter((source) => typeof source.id === 'string')
+      .map((source) => [source.id as string, source])
+  );
+  const snapshotNews = props.newsSnapshot ?? {};
+  const snapshotSourceIds = Object.keys(snapshotNews);
+  const selectedSourceIds = props.selectedNewsSourceIds ?? [];
+  const missingSelected = selectedSourceIds.filter((id) => !snapshotSourceIds.includes(id));
+  const unknownSelected = selectedSourceIds.filter((id) => !availableById.has(id));
+  const selectedRows = selectedSourceIds.map((id) => {
+    const source = availableById.get(id);
+    const signal = snapshotNews[id] as NewsSignal | undefined;
+    const stories = signal?.stories?.length ?? 0;
+    const updatedAt = signal?.updatedAt ?? '-';
+    const diagnostics = props.metrics.newsSources?.[id];
+    const lastSuccessAt = diagnostics?.lastSuccessAt ?? null;
+    const lastStoryCount = diagnostics?.lastStoryCount ?? null;
+    return {
+      id,
+      name: typeof source?.name === 'string' ? source.name : 'Unknown source',
+      stories,
+      updatedAt,
+      status: signal ? 'Present' : 'Missing',
+      lastSuccessAt,
+      lastStoryCount
+    };
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -145,7 +180,7 @@ export default function AdminDashboard(props: AdminDashboardProps) {
           </label>
         </div>
         <p className="meta section-subtitle trend-window-label">{trendWindowLabel}</p>
-        {adminUnauthorized ? <p className="empty">Unauthorized. Please log in to view admin diagnostics.</p> : null}
+        {adminUnauthorized ? <p className="empty">Session expired. Please log in again.</p> : null}
         {props.trendsLoading ? (
           <div className="skeleton-block">
             <div className="skeleton-line" />
@@ -170,6 +205,86 @@ export default function AdminDashboard(props: AdminDashboardProps) {
 
       <CollectorStatusCard collectorStatus={props.collectorStatus} />
       <ConfigCard catalogDefaults={props.catalogDefaults} configView={props.configView} />
+      <section className="card admin-news-debug">
+        <h2 className="section-title">News Debug</h2>
+        <p className="meta section-description">Selected sources vs collected snapshot to diagnose missing feeds.</p>
+        <div className="news-debug-stats">
+          <div className="news-debug-stat">
+            <div className="label">Available sources</div>
+            <div className="value">{availableSourceIds.length}</div>
+          </div>
+          <div className="news-debug-stat">
+            <div className="label">Selected sources</div>
+            <div className="value">{selectedSourceIds.length}</div>
+          </div>
+          <div className="news-debug-stat">
+            <div className="label">Snapshot sources</div>
+            <div className="value">{snapshotSourceIds.length}</div>
+          </div>
+          <div className="news-debug-stat">
+            <div className="label">Missing selected</div>
+            <div className="value">{missingSelected.length}</div>
+          </div>
+        </div>
+        <div className="news-debug-lists">
+          <section className="news-debug-list">
+            <h3 className="section-subtitle">Selected but unknown</h3>
+            {unknownSelected.length > 0 ? (
+              <ul className="news-debug-items">
+                {unknownSelected.map((id) => (
+                  <li key={id}>{id}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="meta">None.</p>
+            )}
+          </section>
+          <section className="news-debug-list">
+            <h3 className="section-subtitle">Selected but missing in snapshot</h3>
+            {missingSelected.length > 0 ? (
+              <ul className="news-debug-items">
+                {missingSelected.map((id) => (
+                  <li key={id}>{id}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="meta">None.</p>
+            )}
+          </section>
+        </div>
+        {selectedRows.length === 0 ? (
+          <p className="empty">No selected news sources yet.</p>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Stories</th>
+                  <th>Updated</th>
+                  <th>Last Success</th>
+                  <th>Last Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.id}</td>
+                    <td>{row.name}</td>
+                    <td>{row.status}</td>
+                    <td>{row.stories}</td>
+                    <td className="site-date">{formatDateTimeValue(row.updatedAt)}</td>
+                    <td className="site-date">{row.lastSuccessAt ? formatDateTimeValue(row.lastSuccessAt) : '-'}</td>
+                    <td>{row.lastStoryCount ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="card sites">
         <h2 className="section-title">Sites (diagnostic)</h2>

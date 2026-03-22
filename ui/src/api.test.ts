@@ -20,6 +20,7 @@ import {
   signup,
   triggerCollectorRefresh
 } from './api';
+import { apiUrl } from './config/api';
 
 describe('basic fetch wrappers', () => {
   afterEach(() => {
@@ -74,7 +75,7 @@ describe('fetchEvents', () => {
     );
 
     await fetchEvents();
-    expect(fetchMock).toHaveBeenCalledWith('/api/events?limit=100');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/events?limit=100'));
   });
 
   it('uses explicit limit parameter', async () => {
@@ -86,7 +87,7 @@ describe('fetchEvents', () => {
     );
 
     await fetchEvents(5);
-    expect(fetchMock).toHaveBeenCalledWith('/api/events?limit=5');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/events?limit=5'));
   });
 
   it('throws on non-ok response', async () => {
@@ -109,7 +110,7 @@ describe('fetchMarkets', () => {
     );
 
     await expect(fetchMarkets(['AAPL', 'MSFT'])).resolves.toMatchObject({ status: 'ok', items: [] });
-    expect(fetchMock).toHaveBeenCalledWith('/api/markets?symbols=AAPL%2CMSFT');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/markets?symbols=AAPL%2CMSFT'));
   });
 
   it('throws on non-ok response', async () => {
@@ -124,13 +125,15 @@ describe('fetchDevOutbox', () => {
   });
 
   it('returns empty list on 404', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 404 }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 404 }));
     await expect(fetchDevOutbox()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/dev/outbox'), { credentials: 'include' });
   });
 
   it('throws on non-404 failure', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 500 }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 500 }));
     await expect(fetchDevOutbox()).rejects.toThrow('Dev outbox request failed (500)');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/dev/outbox'), { credentials: 'include' });
   });
 });
 
@@ -140,7 +143,7 @@ describe('admin endpoints', () => {
   });
 
   it('fetchAdminTrends returns parsed payload', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify({
         windowStart: '2026-02-25T20:00:00Z',
         bucketSeconds: 300,
@@ -151,11 +154,13 @@ describe('admin endpoints', () => {
       })
     );
     await expect(fetchAdminTrends()).resolves.toMatchObject({ bucketSeconds: 300, series: [] });
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/admin/trends'), { credentials: 'include' });
   });
 
   it('fetchAdminEmailPreview throws on non-ok', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 500 }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('bad', { status: 500 }));
     await expect(fetchAdminEmailPreview()).rejects.toThrow('Admin email preview request failed (500)');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/admin/email/preview'), { credentials: 'include' });
   });
 });
 
@@ -169,7 +174,7 @@ describe('triggerCollectorRefresh', () => {
 
     await triggerCollectorRefresh();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/collectors/refresh', {
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/collectors/refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ collectors: ['envCollector', 'rssCollector', 'localEventsCollector'] })
@@ -220,9 +225,10 @@ describe('resetSettings', () => {
       scopeApplied: 'collectors',
       preferences: { zipCodes: ['02108'] }
     });
-    expect(fetchMock).toHaveBeenCalledWith('/api/settings/reset', {
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/settings/reset'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ scope: 'collectors' })
     });
   });
@@ -420,7 +426,7 @@ describe('deleteMyAccount', () => {
   it('posts to /api/me/delete', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 200 }));
     await expect(deleteMyAccount()).resolves.toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledWith('/api/me/delete', { method: 'POST' });
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/me/delete'), { method: 'POST', credentials: 'include' });
   });
 
   it('throws on failure', async () => {
@@ -457,7 +463,7 @@ describe('fetchEnvironment', () => {
     );
 
     await expect(fetchEnvironment([])).resolves.toHaveLength(1);
-    expect(fetchMock).toHaveBeenCalledWith('/api/env');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/env'));
   });
 
   it('throws clear error when single-zip request fails', async () => {
@@ -468,10 +474,10 @@ describe('fetchEnvironment', () => {
   it('returns fulfilled per-zip payloads when batch request fails', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/env?zips=02108%2C98101') {
+      if (url === apiUrl('/api/env?zips=02108%2C98101')) {
         return new Response('bad', { status: 500 });
       }
-      if (url === '/api/env?zips=02108') {
+      if (url === apiUrl('/api/env?zips=02108')) {
         return new Response(JSON.stringify([{
           zip: '02108',
           locationLabel: 'Boston, MA (02108)',
@@ -485,7 +491,7 @@ describe('fetchEnvironment', () => {
           headers: { 'Content-Type': 'application/json' }
         });
       }
-      if (url === '/api/env?zips=98101') {
+      if (url === apiUrl('/api/env?zips=98101')) {
         return new Response('bad', { status: 502 });
       }
       throw new Error(`unexpected url ${url}`);
@@ -500,10 +506,10 @@ describe('fetchEnvironment', () => {
   it('throws if all per-zip fallback requests fail', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/env?zips=02108%2C98101') {
+      if (url === apiUrl('/api/env?zips=02108%2C98101')) {
         return new Response('bad', { status: 500 });
       }
-      if (url === '/api/env?zips=02108' || url === '/api/env?zips=98101') {
+      if (url === apiUrl('/api/env?zips=02108') || url === apiUrl('/api/env?zips=98101')) {
         return new Response('bad', { status: 503 });
       }
       throw new Error(`unexpected url ${url}`);
@@ -515,10 +521,10 @@ describe('fetchEnvironment', () => {
   it('uses encoded query for batch and per-zip fallback', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      if (url === '/api/env?zips=02108%2C98%2F101') {
+      if (url === apiUrl('/api/env?zips=02108%2C98%2F101')) {
         return new Response('bad', { status: 500 });
       }
-      if (url === '/api/env?zips=02108') {
+      if (url === apiUrl('/api/env?zips=02108')) {
         return new Response(JSON.stringify([{
           zip: '02108',
           locationLabel: 'Boston, MA (02108)',
@@ -532,7 +538,7 @@ describe('fetchEnvironment', () => {
           headers: { 'Content-Type': 'application/json' }
         });
       }
-      if (url === '/api/env?zips=98%2F101') {
+      if (url === apiUrl('/api/env?zips=98%2F101')) {
         return new Response('bad', { status: 503 });
       }
       throw new Error(`unexpected url ${url}`);
@@ -540,7 +546,7 @@ describe('fetchEnvironment', () => {
 
     const results = await fetchEnvironment(['02108', '98/101']);
     expect(results).toHaveLength(1);
-    expect(fetchMock).toHaveBeenCalledWith('/api/env?zips=02108%2C98%2F101');
-    expect(fetchMock).toHaveBeenCalledWith('/api/env?zips=98%2F101');
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/env?zips=02108%2C98%2F101'));
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/env?zips=98%2F101'));
   });
 });

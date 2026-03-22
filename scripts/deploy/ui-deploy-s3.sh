@@ -29,12 +29,11 @@ fi
 BUCKET="$1"
 PROFILE="${2-}"
 
-PROFILE_ARGS=()
-if [[ -n "$PROFILE" ]]; then
-  PROFILE_ARGS+=(--profile "$PROFILE")
-fi
-
 echo "Syncing $UI_DIST to s3://$BUCKET ..."
-aws s3 sync "$UI_DIST/" "s3://$BUCKET" --delete "${PROFILE_ARGS[@]}"
+if [[ -n "$PROFILE" ]]; then
+  aws s3 sync "$UI_DIST/" "s3://$BUCKET" --delete --profile "$PROFILE"
+else
+  aws s3 sync "$UI_DIST/" "s3://$BUCKET" --delete
+fi
 
 echo "S3 deploy complete: s3://$BUCKET"

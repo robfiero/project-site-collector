@@ -27,6 +27,7 @@ public final class DiagnosticsTracker {
     private final ArrayDeque<Instant> recentEventTimestamps = new ArrayDeque<>();
     private final Object recentLock = new Object();
     private final ConcurrentHashMap<String, CollectorStatus> collectorStatuses = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, NewsSourceStatus> newsSourceStatuses = new ConcurrentHashMap<>();
     private final TrendStore trendStore;
 
     public DiagnosticsTracker(EventBus eventBus, Clock clock, IntSupplier sseClientCountSupplier) {
@@ -56,6 +57,7 @@ public final class DiagnosticsTracker {
         metrics.put("eventsEmittedTotal", eventsEmittedTotal.longValue());
         metrics.put("recentEventsPerMinute", recentEventsPerMinute());
         metrics.put("collectors", collectorsSnapshot());
+        metrics.put("newsSources", newsSourcesSnapshot());
         return metrics;
     }
 
@@ -69,6 +71,14 @@ public final class DiagnosticsTracker {
 
     public Map<String, Object> trendsSnapshot() {
         return trendStore.snapshot();
+    }
+
+    public Map<String, Object> newsSourcesSnapshot() {
+        Map<String, Object> newsSources = new HashMap<>();
+        for (Map.Entry<String, NewsSourceStatus> entry : newsSourceStatuses.entrySet()) {
+            newsSources.put(entry.getKey(), entry.getValue().toMap());
+        }
+        return newsSources;
     }
 
     private void onAnyEvent(Event event) {
@@ -133,7 +143,10 @@ public final class DiagnosticsTracker {
     }
 
     private void onNewsUpdated(NewsUpdated event) {
-        // Retained for collector status/event-volume diagnostics compatibility.
+        newsSourceStatuses.compute(event.source(), (key, current) -> {
+            NewsSourceStatus status = current == null ? NewsSourceStatus.empty() : current;
+            return status.withUpdate(event.timestamp(), event.storyCount());
+        });
     }
 
     private void onNewsItemsIngested(NewsItemsIngested event) {
@@ -172,6 +185,26 @@ public final class DiagnosticsTracker {
             map.put("lastDurationMillis", lastDurationMillis);
             map.put("lastSuccess", lastSuccess);
             map.put("lastErrorMessage", lastErrorMessage);
+            return map;
+        }
+    }
+
+    private record NewsSourceStatus(
+            Instant lastSuccessAt,
+            Integer lastStoryCount
+    ) {
+        private static NewsSourceStatus empty() {
+            return new NewsSourceStatus(null, null);
+        }
+
+        private NewsSourceStatus withUpdate(Instant successAt, int storyCount) {
+            return new NewsSourceStatus(successAt, storyCount);
+        }
+
+        private Map<String, Object> toMap() {
+            Map<String, Object> map = new HashMap<>();
+            map.put("lastSuccessAt", lastSuccessAt == null ? null : lastSuccessAt.toString());
+            map.put("lastStoryCount", lastStoryCount);
             return map;
         }
     }

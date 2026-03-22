@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +48,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthApiIntegrationTest {
     private ApiServer apiServer;
+    private static final Set<String> DEFAULT_ALLOWED_ORIGINS = Set.of(
+            "http://localhost:5173",
+            "https://deyyrubsvhyt8.cloudfront.net"
+    );
 
     @AfterEach
     void tearDown() {
@@ -98,6 +103,21 @@ class AuthApiIntegrationTest {
     }
 
     @Test
+    void authCookieUsesSameSiteNoneAndSecureWhenConfigured() throws Exception {
+        TestRuntime runtime = startRuntime(true, true, "None", true);
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
+                "email", "none@example.com",
+                "password", "password-123"
+        )), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, signup.statusCode());
+        String cookie = signup.headers().firstValue("Set-Cookie").orElse("");
+        assertTrue(cookie.contains("SameSite=None"));
+        assertTrue(cookie.contains("Secure"));
+    }
+
+    @Test
     void accountDeleteRemovesUserAndPreferences() throws Exception {
         TestRuntime runtime = startRuntime(true);
         HttpClient client = HttpClient.newHttpClient();
@@ -128,6 +148,25 @@ class AuthApiIntegrationTest {
                 HttpResponse.BodyHandlers.ofString()
         );
         assertTrue(me.statusCode() == 401 || me.statusCode() == 404);
+    }
+
+    @Test
+    void corsHeadersPresentOnUnauthorized() throws Exception {
+        TestRuntime runtime = startRuntime(true);
+        HttpClient client = HttpClient.newHttpClient();
+        String origin = "http://localhost:5173";
+
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/me"))
+                        .header("Origin", origin)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertEquals(401, response.statusCode());
+        assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElse(null));
+        assertEquals("true", response.headers().firstValue("Access-Control-Allow-Credentials").orElse(null));
     }
 
     @Test
@@ -838,10 +877,14 @@ class AuthApiIntegrationTest {
     }
 
     private TestRuntime startRuntime(boolean devOutboxEnabled) throws Exception {
-        return startRuntime(devOutboxEnabled, true);
+        return startRuntime(devOutboxEnabled, true, "Lax", false);
     }
 
     private TestRuntime startRuntime(boolean devOutboxEnabled, boolean authEnabled) throws Exception {
+        return startRuntime(devOutboxEnabled, authEnabled, "Lax", false);
+    }
+
+    private TestRuntime startRuntime(boolean devOutboxEnabled, boolean authEnabled, String sameSite, boolean secureCookie) throws Exception {
         Path tempDir = Files.createTempDirectory("signal-sentinel-auth-it-");
         JsonFileSignalStore signalStore = new JsonFileSignalStore(tempDir.resolve("state/signals.json"));
         JsonlEventStore eventStore = new JsonlEventStore(tempDir.resolve("logs/events.jsonl"));
@@ -890,9 +933,12 @@ class AuthApiIntegrationTest {
                 ),
                 Map.of(),
                 authService,
-                false,
+                secureCookie,
+                sameSite,
                 devOutboxEnabled,
-                devOutboxEnabled ? devOutbox : null
+                devOutboxEnabled ? devOutbox : null,
+                DEFAULT_ALLOWED_ORIGINS,
+                true
         );
         AtomicInteger refreshCount = new AtomicInteger();
         apiServer.setCollectorRefreshHook(collectors -> refreshCount.incrementAndGet());

@@ -8,7 +8,7 @@
   {
     "name": "rssCollector",
     "enabled": true,
-    "intervalSeconds": 60,
+    "intervalSeconds": 120,
     "params": {}
   },
   {
@@ -20,7 +20,7 @@
   {
     "name": "localEventsCollector",
     "enabled": true,
-    "intervalSeconds": 300,
+    "intervalSeconds": 43200,
     "params": {}
   }
 ]

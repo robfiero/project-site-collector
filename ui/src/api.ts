@@ -17,8 +17,22 @@ export interface HealthResponse {
   gitSha?: string;
 }
 
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = init === undefined ? await fetch(input) : await fetch(input, init);
+  if (response.status === 401 && onUnauthorized) {
+    onUnauthorized();
+  }
+  return response;
+}
+
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetch(apiUrl('/api/health'));
+  const response = await apiFetch(apiUrl('/api/health'));
   if (!response.ok) {
     throw new Error(`Health request failed (${response.status})`);
   }
@@ -26,7 +40,7 @@ export async function fetchHealth(): Promise<HealthResponse> {
 }
 
 export async function fetchSignals(): Promise<SignalsSnapshot> {
-  const response = await fetch(apiUrl('/api/signals'));
+  const response = await apiFetch(apiUrl('/api/signals'), withCredentials());
   if (!response.ok) {
     throw new Error(`Signals request failed (${response.status})`);
   }
@@ -34,7 +48,7 @@ export async function fetchSignals(): Promise<SignalsSnapshot> {
 }
 
 export async function fetchEvents(limit = 100): Promise<unknown[]> {
-  const response = await fetch(apiUrl(`/api/events?limit=${limit}`));
+  const response = await apiFetch(apiUrl(`/api/events?limit=${limit}`));
   if (!response.ok) {
     throw new Error(`Events request failed (${response.status})`);
   }
@@ -42,7 +56,7 @@ export async function fetchEvents(limit = 100): Promise<unknown[]> {
 }
 
 export async function fetchMetrics(): Promise<MetricsResponse> {
-  const response = await fetch(apiUrl('/api/metrics'));
+  const response = await apiFetch(apiUrl('/api/metrics'));
   if (!response.ok) {
     throw new Error(`Metrics request failed (${response.status})`);
   }
@@ -51,7 +65,7 @@ export async function fetchMetrics(): Promise<MetricsResponse> {
 
 export async function fetchMarkets(symbols: string[]): Promise<MarketsSnapshot> {
   const query = symbols.length > 0 ? `?symbols=${encodeURIComponent(symbols.join(','))}` : '';
-  const response = await fetch(apiUrl(`/api/markets${query}`));
+  const response = await apiFetch(apiUrl(`/api/markets${query}`));
   if (!response.ok) {
     throw new Error(`Markets request failed (${response.status})`);
   }
@@ -59,7 +73,7 @@ export async function fetchMarkets(symbols: string[]): Promise<MarketsSnapshot> 
 }
 
 export async function fetchCollectorStatus(): Promise<Record<string, CollectorStatus>> {
-  const response = await fetch(apiUrl('/api/collectors/status'));
+  const response = await apiFetch(apiUrl('/api/collectors/status'));
   if (!response.ok) {
     throw new Error(`Collector status request failed (${response.status})`);
   }
@@ -67,7 +81,7 @@ export async function fetchCollectorStatus(): Promise<Record<string, CollectorSt
 }
 
 export async function fetchCatalogDefaults(): Promise<CatalogDefaults> {
-  const response = await fetch(apiUrl('/api/catalog/defaults'));
+  const response = await apiFetch(apiUrl('/api/catalog/defaults'));
   if (!response.ok) {
     throw new Error(`Catalog defaults request failed (${response.status})`);
   }
@@ -75,7 +89,7 @@ export async function fetchCatalogDefaults(): Promise<CatalogDefaults> {
 }
 
 export async function fetchConfigView(): Promise<Record<string, unknown>> {
-  const response = await fetch(apiUrl('/api/config'));
+  const response = await apiFetch(apiUrl('/api/config'));
   if (!response.ok) {
     throw new Error(`Config request failed (${response.status})`);
   }
@@ -84,7 +98,7 @@ export async function fetchConfigView(): Promise<Record<string, unknown>> {
 
 export async function fetchEnvironment(zips: string[]): Promise<EnvStatus[]> {
   const query = zips.length > 0 ? `?zips=${encodeURIComponent(zips.join(','))}` : '';
-  const response = await fetch(apiUrl(`/api/env${query}`));
+  const response = await apiFetch(apiUrl(`/api/env${query}`));
   if (response.ok) {
     return response.json();
   }
@@ -94,7 +108,7 @@ export async function fetchEnvironment(zips: string[]): Promise<EnvStatus[]> {
 
   const settled = await Promise.allSettled(
     zips.map(async (zip) => {
-      const single = await fetch(apiUrl(`/api/env?zips=${encodeURIComponent(zip)}`));
+      const single = await apiFetch(apiUrl(`/api/env?zips=${encodeURIComponent(zip)}`));
       if (!single.ok) {
         throw new Error(`Environment request failed (${single.status}) for ZIP ${zip}`);
       }
@@ -127,7 +141,7 @@ export interface PreferencesPayload {
   watchlist: string[];
   newsSourceIds: string[];
   themeMode: 'light' | 'dark';
-  accent: 'default' | 'gold' | 'blue' | 'green';
+  accent: 'default' | 'gold' | 'blue' | 'green' | 'red' | 'orange' | 'yellow' | 'purple' | 'pink' | 'white' | 'lightGray' | 'darkGray' | 'black';
 }
 
 export interface DevOutboxEmail {
@@ -151,11 +165,26 @@ export interface SettingsResetResponse {
 }
 
 async function postJson(path: string, payload: Record<string, unknown>): Promise<Response> {
-  return fetch(apiUrl(path), {
+  return apiFetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
+}
+
+function withCredentials(init: RequestInit = {}): RequestInit {
+  return { ...init, credentials: 'include' };
+}
+
+async function postJsonWithCredentials(path: string, payload: Record<string, unknown>): Promise<Response> {
+  return apiFetch(
+    apiUrl(path),
+    withCredentials({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+  );
 }
 
 type ApiError = Error & { status?: number };
@@ -189,7 +218,7 @@ async function throwApiError(response: Response, fallback: string): Promise<neve
 }
 
 export async function signup(email: string, password: string): Promise<AuthUserView> {
-  const response = await postJson('/api/auth/signup', { email, password });
+  const response = await postJsonWithCredentials('/api/auth/signup', { email, password });
   if (!response.ok) {
     await throwApiError(response, `Signup failed (${response.status})`);
   }
@@ -197,7 +226,7 @@ export async function signup(email: string, password: string): Promise<AuthUserV
 }
 
 export async function login(email: string, password: string): Promise<AuthUserView> {
-  const response = await postJson('/api/auth/login', { email, password });
+  const response = await postJsonWithCredentials('/api/auth/login', { email, password });
   if (!response.ok) {
     await throwApiError(response, `Login failed (${response.status})`);
   }
@@ -205,35 +234,35 @@ export async function login(email: string, password: string): Promise<AuthUserVi
 }
 
 export async function logout(): Promise<void> {
-  const response = await fetch(apiUrl('/api/auth/logout'), { method: 'POST' });
+  const response = await apiFetch(apiUrl('/api/auth/logout'), withCredentials({ method: 'POST' }));
   if (!response.ok) {
     await throwApiError(response, `Logout failed (${response.status})`);
   }
 }
 
 export async function deleteMyAccount(): Promise<void> {
-  const response = await fetch(apiUrl('/api/me/delete'), { method: 'POST' });
+  const response = await apiFetch(apiUrl('/api/me/delete'), withCredentials({ method: 'POST' }));
   if (!response.ok) {
     await throwApiError(response, `Account deletion failed (${response.status})`);
   }
 }
 
 export async function forgotPassword(email: string): Promise<void> {
-  const response = await postJson('/api/auth/forgot', { email });
+  const response = await postJsonWithCredentials('/api/auth/forgot', { email });
   if (!response.ok) {
     await throwApiError(response, `Forgot password request failed (${response.status})`);
   }
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
-  const response = await postJson('/api/auth/reset', { token, newPassword });
+  const response = await postJsonWithCredentials('/api/auth/reset', { token, newPassword });
   if (!response.ok) {
     await throwApiError(response, `Password reset failed (${response.status})`);
   }
 }
 
 export async function fetchMe(): Promise<AuthUserView | null> {
-  const response = await fetch(apiUrl('/api/me'));
+  const response = await apiFetch(apiUrl('/api/me'), withCredentials());
   if (response.status === 401) {
     return null;
   }
@@ -254,7 +283,7 @@ export async function fetchMe(): Promise<AuthUserView | null> {
 }
 
 export async function fetchMyPreferences(): Promise<PreferencesPayload> {
-  const response = await fetch(apiUrl('/api/me/preferences'));
+  const response = await apiFetch(apiUrl('/api/me/preferences'), withCredentials());
   if (!response.ok) {
     await throwApiError(response, `Preferences request failed (${response.status})`);
   }
@@ -262,11 +291,11 @@ export async function fetchMyPreferences(): Promise<PreferencesPayload> {
 }
 
 export async function saveMyPreferences(payload: PreferencesPayload): Promise<PreferencesPayload> {
-  const response = await fetch(apiUrl('/api/me/preferences'), {
+  const response = await apiFetch(apiUrl('/api/me/preferences'), withCredentials({
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  });
+  }));
   if (!response.ok) {
     await throwApiError(response, `Preferences update failed (${response.status})`);
   }
@@ -274,7 +303,7 @@ export async function saveMyPreferences(payload: PreferencesPayload): Promise<Pr
 }
 
 export async function fetchDevOutbox(): Promise<DevOutboxEmail[]> {
-  const response = await fetch(apiUrl('/api/dev/outbox'));
+  const response = await apiFetch(apiUrl('/api/dev/outbox'), withCredentials());
   if (response.status === 404) {
     return [];
   }
@@ -285,7 +314,7 @@ export async function fetchDevOutbox(): Promise<DevOutboxEmail[]> {
 }
 
 export async function fetchAdminTrends(): Promise<AdminTrendsSnapshot> {
-  const response = await fetch(apiUrl('/api/admin/trends'));
+  const response = await apiFetch(apiUrl('/api/admin/trends'), withCredentials());
   if (!response.ok) {
     throw new Error(`Admin trends request failed (${response.status})`);
   }
@@ -293,7 +322,7 @@ export async function fetchAdminTrends(): Promise<AdminTrendsSnapshot> {
 }
 
 export async function fetchAdminEmailPreview(): Promise<AdminEmailPreview> {
-  const response = await fetch(apiUrl('/api/admin/email/preview'));
+  const response = await apiFetch(apiUrl('/api/admin/email/preview'), withCredentials());
   if (!response.ok) {
     throw new Error(`Admin email preview request failed (${response.status})`);
   }
@@ -301,7 +330,7 @@ export async function fetchAdminEmailPreview(): Promise<AdminEmailPreview> {
 }
 
 export async function fetchNewsSourceSettings(): Promise<NewsSourceSettingsPayload> {
-  const response = await fetch(apiUrl('/api/settings/newsSources'));
+  const response = await apiFetch(apiUrl('/api/settings/newsSources'), withCredentials());
   if (!response.ok) {
     await throwApiError(response, `News source settings request failed (${response.status})`);
   }
@@ -309,11 +338,11 @@ export async function fetchNewsSourceSettings(): Promise<NewsSourceSettingsPaylo
 }
 
 export async function saveNewsSourceSettings(selectedSources: string[]): Promise<NewsSourceSettingsPayload> {
-  const response = await fetch(apiUrl('/api/settings/newsSources'), {
+  const response = await apiFetch(apiUrl('/api/settings/newsSources'), withCredentials({
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ selectedSources })
-  });
+  }));
   if (!response.ok) {
     await throwApiError(response, `News source settings update failed (${response.status})`);
   }
@@ -321,11 +350,11 @@ export async function saveNewsSourceSettings(selectedSources: string[]): Promise
 }
 
 export async function resetSettings(scope: SettingsResetScope): Promise<SettingsResetResponse> {
-  const response = await fetch(apiUrl('/api/settings/reset'), {
+  const response = await apiFetch(apiUrl('/api/settings/reset'), withCredentials({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scope })
-  });
+  }));
   if (!response.ok) {
     await throwApiError(response, `Settings reset failed (${response.status})`);
   }
@@ -333,7 +362,7 @@ export async function resetSettings(scope: SettingsResetScope): Promise<Settings
 }
 
 export async function triggerCollectorRefresh(collectors: string[] = ['envCollector', 'rssCollector', 'localEventsCollector']): Promise<void> {
-  const response = await fetch(apiUrl('/api/collectors/refresh'), {
+  const response = await apiFetch(apiUrl('/api/collectors/refresh'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ collectors })

@@ -15,8 +15,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 public class SchedulerService {
+    private static final Logger LOGGER = Logger.getLogger(SchedulerService.class.getName());
     private final List<ScheduledCollector> collectors;
     private final CollectorContext context;
     private final long minIntervalMillis;
@@ -39,6 +41,8 @@ public class SchedulerService {
                 continue;
             }
             long intervalMillis = Math.max(minIntervalMillis, scheduled.interval().toMillis());
+            LOGGER.info("Scheduler registered collector=" + scheduled.collector().name()
+                    + " intervalSeconds=" + (intervalMillis / 1000.0));
             timerExecutor.scheduleAtFixedRate(
                     () -> collectorExecutor.submit(() -> runCollector(scheduled.collector())),
                     0,

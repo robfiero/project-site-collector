@@ -143,8 +143,12 @@ public class RssNewsCollector implements Collector {
                 .orTimeout(ctx.requestTimeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
                 .handle((response, error) -> {
                     if (error != null) {
-                        LOGGER.warning(() -> "RSS fetch failed source=" + source.source() + " url=" + source.url()
-                                + " reason=" + rootMessage(error));
+                        String errorType = error.getClass().getSimpleName();
+                        String message = rootMessage(error);
+                        LOGGER.warning(() -> "RSS fetch failed:\n  source=" + source.source()
+                                + "\n  url=" + source.url()
+                                + "\n  error=" + errorType
+                                + "\n  message=" + message);
                         ctx.eventBus().publish(new AlertRaised(
                                 ctx.clock().instant(),
                                 "collector",
@@ -187,10 +191,11 @@ public class RssNewsCollector implements Collector {
 
                     if (statusCode == 401 || statusCode == 403) {
                         String contentType = response.headers().firstValue("Content-Type").orElse("-");
-                        LOGGER.warning(() -> "RSS access denied source=" + source.source()
-                                + " status=" + statusCode
-                                + " contentType=" + contentType
-                                + " url=" + sanitizeText(source.url()));
+                        LOGGER.warning(() -> "RSS fetch failed:\n  source=" + source.source()
+                                + "\n  url=" + sanitizeText(source.url())
+                                + "\n  status=" + statusCode
+                                + "\n  contentType=" + contentType
+                                + "\n  message=HTTP " + statusCode);
                         ctx.eventBus().publish(new AlertRaised(
                                 ctx.clock().instant(),
                                 "collector",
@@ -202,9 +207,11 @@ public class RssNewsCollector implements Collector {
 
                     if (statusCode < 200 || statusCode >= 300) {
                         String contentType = response.headers().firstValue("Content-Type").orElse("-");
-                        LOGGER.warning(() -> "RSS fetch failed source=" + source.source() + " url=" + sanitizeText(source.url())
-                                + " status=" + statusCode
-                                + " contentType=" + contentType);
+                        LOGGER.warning(() -> "RSS fetch failed:\n  source=" + source.source()
+                                + "\n  url=" + sanitizeText(source.url())
+                                + "\n  status=" + statusCode
+                                + "\n  contentType=" + contentType
+                                + "\n  message=HTTP " + statusCode);
                         ctx.eventBus().publish(new AlertRaised(
                                 ctx.clock().instant(),
                                 "collector",
@@ -220,13 +227,13 @@ public class RssNewsCollector implements Collector {
                         String bodyType = classifyBody(response.body());
                         String contentType = response.headers().firstValue("Content-Type").orElse("-");
                         String contentEncoding = response.headers().firstValue("Content-Encoding").orElse("-");
-                        LOGGER.warning(() -> "Invalid RSS/Atom XML source=" + source.source()
-                                + " finalUrl=" + sanitizeText(response.uri().toString())
-                                + " httpStatus=" + response.statusCode()
-                                + " contentType=" + contentType
-                                + " contentEncoding=" + contentEncoding
-                                + " bodyStartsWith=" + bodyType
-                                + " snippet=\"" + bodySnippet + "\"");
+                        LOGGER.warning(() -> "RSS fetch failed:\n  source=" + source.source()
+                                + "\n  url=" + sanitizeText(response.uri().toString())
+                                + "\n  status=" + response.statusCode()
+                                + "\n  contentType=" + contentType
+                                + "\n  contentEncoding=" + contentEncoding
+                                + "\n  message=Invalid RSS/Atom XML (" + bodyType + ")"
+                                + "\n  snippet=\"" + bodySnippet + "\"");
                         ctx.eventBus().publish(new AlertRaised(
                                 ctx.clock().instant(),
                                 "collector",
@@ -240,6 +247,11 @@ public class RssNewsCollector implements Collector {
                             .sorted(Comparator.comparing(NewsStory::publishedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                             .limit(Math.max(1, cfg.topStories()))
                             .toList();
+                    String contentType = response.headers().firstValue("Content-Type").orElse("-");
+                    LOGGER.info(() -> "RSS fetch success:\n  source=" + source.source()
+                            + "\n  items=" + stories.size()
+                            + "\n  status=" + response.statusCode()
+                            + "\n  contentType=" + contentType);
 
                     NewsSignal signal = new NewsSignal(sourceId, stories, ctx.clock().instant());
                     ctx.signalStore().putNews(signal);

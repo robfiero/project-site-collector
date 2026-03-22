@@ -9,57 +9,62 @@ import com.signalsentinel.core.util.JsonUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.logging.Logger;
 
 public final class ConfigLoader {
+    private static final Logger LOGGER = Logger.getLogger(ConfigLoader.class.getName());
+    private static final String COLLECTORS_RESOURCE = "/config/collectors.json";
+    private static final String SITES_RESOURCE = "/config/sites.json";
+    private static final String RSS_RESOURCE = "/config/rss.json";
+    private static final String WEATHER_RESOURCE = "/config/weather.json";
+
     private ConfigLoader() {
     }
 
     public static List<CollectorConfig> loadCollectors(Path configDir) {
-        Path __debugCollectors = configDir.resolve("collectors.json");
-        System.out.println("\n=== ENV COLLECTOR DEBUG ===");
-        System.out.println("user.dir=" + System.getProperty("user.dir"));
-        System.out.println("configDir(raw)=" + configDir);
-        System.out.println("configDir(abs)=" + configDir.toAbsolutePath().normalize());
-        System.out.println("collectors.json(abs)=" + __debugCollectors.toAbsolutePath().normalize());
-        try {
-            System.out.println("collectors.json exists=" + java.nio.file.Files.exists(__debugCollectors));
-            System.out.println("collectors.json readable=" + java.nio.file.Files.isReadable(__debugCollectors));
-        } catch (Exception ignored) {}
-        System.out.println("===========================\n");
-        Path collectorsPath = configDir.resolve("collectors.json");
-        List<CollectorConfig> collectors = read(collectorsPath, new TypeReference<>() {
-        });
-        System.out.println("Collectors loaded from " + collectorsPath.toAbsolutePath().normalize());
-        System.out.println("Collector keys=" + collectors.stream().map(CollectorConfig::name).toList());
-        for (CollectorConfig collector : collectors) {
-            System.out.println("  " + collector.name() + " enabled=" + collector.enabled() + " interval=" + collector.intervalSeconds());
-        }
+        LOGGER.info("Config source: collectors=classpath:" + COLLECTORS_RESOURCE);
+        List<CollectorConfig> collectors = readResource(COLLECTORS_RESOURCE, new TypeReference<>() {
+        }, "collectors.json");
+        LOGGER.info("Config summary: collectors=" + collectors.size());
         return collectors;
     }
 
     public static SiteCollectorConfig loadSites(Path configDir) {
-        return read(configDir.resolve("sites.json"), new TypeReference<>() {
-        });
+        LOGGER.info("Config source: sites=classpath:" + SITES_RESOURCE);
+        SiteCollectorConfig sites = readResource(SITES_RESOURCE, new TypeReference<>() {
+        }, "sites.json");
+        return sites;
     }
 
     public static RssCollectorConfig loadRss(Path configDir) {
-        return read(configDir.resolve("rss.json"), new TypeReference<>() {
-        });
+        LOGGER.info("Config source: rss=classpath:" + RSS_RESOURCE);
+        RssCollectorConfig rss = readResource(RSS_RESOURCE, new TypeReference<>() {
+        }, "rss.json");
+        int sourceCount = rss.sources() == null ? 0 : rss.sources().size();
+        LOGGER.info("Config summary: rssSources=" + sourceCount);
+        return rss;
     }
 
     public static WeatherCollectorConfig loadWeather(Path configDir) {
-        return read(configDir.resolve("weather.json"), new TypeReference<>() {
-        });
+        LOGGER.info("Config source: weather=classpath:" + WEATHER_RESOURCE);
+        WeatherCollectorConfig weather = readResource(WEATHER_RESOURCE, new TypeReference<>() {
+        }, "weather.json");
+        return weather;
     }
 
-    private static <T> T read(Path path, TypeReference<T> ref) {
-        try (InputStream in = Files.newInputStream(path)) {
-            return JsonUtils.objectMapper().readValue(in, ref);
+    static <T> T readResource(String resourcePath, TypeReference<T> ref, String label) {
+        InputStream in = ConfigLoader.class.getResourceAsStream(resourcePath);
+        if (in == null) {
+            String message = "Missing config resource " + resourcePath + " (expected " + label + " on classpath)";
+            LOGGER.severe(message);
+            throw new IllegalStateException(message);
+        }
+        try (InputStream stream = in) {
+            return JsonUtils.objectMapper().readValue(stream, ref);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed loading config from " + path, e);
+            throw new IllegalStateException("Failed loading config from classpath " + resourcePath, e);
         }
     }
 }

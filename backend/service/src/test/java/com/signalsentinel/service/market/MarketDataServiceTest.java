@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
@@ -55,7 +56,9 @@ class MarketDataServiceTest {
                 "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
                 Duration.ofSeconds(2),
                 Clock.fixed(Instant.parse("2026-02-25T18:00:00Z"), ZoneOffset.UTC),
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
         );
 
         MarketDataService.MarketSnapshot result = service.fetch(List.of("MSFT", "AAPL"));
@@ -76,7 +79,9 @@ class MarketDataServiceTest {
                 "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
                 Duration.ofSeconds(2),
                 Clock.fixed(Instant.parse("2026-02-25T18:00:00Z"), ZoneOffset.UTC),
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
         );
 
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.fetch(List.of("AAPL")));
@@ -110,7 +115,9 @@ class MarketDataServiceTest {
                 "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
                 Duration.ofSeconds(2),
                 Clock.fixed(Instant.parse("2026-02-25T18:00:00Z"), ZoneOffset.UTC),
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
         );
 
         MarketDataService.MarketSnapshot result = service.fetch(List.of("AAPL"));
@@ -142,7 +149,9 @@ class MarketDataServiceTest {
                 "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
                 Duration.ofSeconds(2),
                 Clock.fixed(Instant.parse("2026-02-25T18:00:00Z"), ZoneOffset.UTC),
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
         );
 
         MarketDataService.MarketSnapshot result = service.fetch(List.of("^GSPC"));
@@ -169,13 +178,15 @@ class MarketDataServiceTest {
         });
         server.start();
 
-        MutableClock clock = new MutableClock(Instant.parse("2026-02-25T18:00:00Z"));
+        MutableClock clock = new MutableClock(Instant.parse("2026-03-15T15:00:00Z"));
         MarketDataService service = new MarketDataService(
                 HttpClient.newHttpClient(),
                 "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
                 Duration.ofSeconds(2),
                 clock,
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
         );
 
         MarketDataService.MarketSnapshot first = service.fetch(List.of("AAPL"));
@@ -188,6 +199,87 @@ class MarketDataServiceTest {
         assertTrue(second.error().contains("HTTP 429"));
     }
 
+    @Test
+    void marketOpenUsesShortCacheTtl() throws Exception {
+        AtomicInteger counter = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/v7/finance/quote", exchange -> {
+            if (counter.getAndIncrement() == 0) {
+                writeResponse(exchange, 200, """
+                        {"quoteResponse":{"result":[
+                          {"symbol":"AAPL","regularMarketPrice":210.0,"regularMarketChange":0.5,"regularMarketTime":1772001000}
+                        ]}}
+                        """);
+            } else {
+                writeResponse(exchange, 500, "{\"error\":\"server\"}");
+            }
+        });
+        server.start();
+
+        MutableClock clock = new MutableClock(Instant.parse("2026-03-16T14:00:00Z"));
+        MarketDataService service = new MarketDataService(
+                HttpClient.newHttpClient(),
+                "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
+                Duration.ofSeconds(2),
+                clock,
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
+        );
+
+        MarketDataService.MarketSnapshot first = service.fetch(List.of("AAPL"));
+        assertEquals("ok", first.status());
+        clock.advance(Duration.ofSeconds(20));
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.fetch(List.of("AAPL")));
+        assertTrue(error.getMessage().contains("HTTP 500"));
+    }
+
+    @Test
+    void marketClosedUsesLongerCacheTtl() throws Exception {
+        AtomicInteger counter = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/v7/finance/quote", exchange -> {
+            if (counter.getAndIncrement() == 0) {
+                writeResponse(exchange, 200, """
+                        {"quoteResponse":{"result":[
+                          {"symbol":"AAPL","regularMarketPrice":210.0,"regularMarketChange":0.5,"regularMarketTime":1772001000}
+                        ]}}
+                        """);
+            } else {
+                writeResponse(exchange, 500, "{\"error\":\"server\"}");
+            }
+        });
+        server.start();
+
+        MutableClock clock = new MutableClock(Instant.parse("2026-03-15T15:00:00Z"));
+        MarketDataService service = new MarketDataService(
+                HttpClient.newHttpClient(),
+                "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
+                Duration.ofSeconds(2),
+                clock,
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
+        );
+
+        MarketDataService.MarketSnapshot first = service.fetch(List.of("AAPL"));
+        assertEquals("ok", first.status());
+        clock.advance(Duration.ofMinutes(1));
+        MarketDataService.MarketSnapshot second = service.fetch(List.of("AAPL"));
+        assertEquals("stale", second.status());
+        assertTrue(second.stale());
+        assertTrue(second.error().contains("HTTP 500"));
+    }
+
+    @Test
+    void marketOpenWindowRespectsEasternTime() {
+        ZoneId eastern = ZoneId.of("America/New_York");
+        assertTrue(MarketDataService.isMarketOpen(Instant.parse("2026-03-16T14:00:00Z"), eastern));
+        assertTrue(!MarketDataService.isMarketOpen(Instant.parse("2026-03-16T13:00:00Z"), eastern));
+        assertTrue(!MarketDataService.isMarketOpen(Instant.parse("2026-03-16T21:30:00Z"), eastern));
+        assertTrue(!MarketDataService.isMarketOpen(Instant.parse("2026-03-15T15:00:00Z"), eastern));
+    }
+
     private void assertStatusThrows(int status, String expectedMessagePart) throws Exception {
         server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/v7/finance/quote", exchange -> writeResponse(exchange, status, "{\"error\":\"x\"}"));
@@ -198,7 +290,9 @@ class MarketDataServiceTest {
                 "http://localhost:" + server.getAddress().getPort() + "/v7/finance/quote",
                 Duration.ofSeconds(2),
                 Clock.fixed(Instant.parse("2026-02-25T18:00:00Z"), ZoneOffset.UTC),
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(15),
+                Duration.ofMinutes(15),
+                ZoneId.of("America/New_York")
         );
 
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.fetch(List.of("AAPL")));

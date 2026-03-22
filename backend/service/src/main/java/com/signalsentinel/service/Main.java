@@ -45,8 +45,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
@@ -65,6 +67,7 @@ public final class Main {
         // DATA_DIR controls where user accounts and preferences are persisted across restarts/redeploys.
         Path dataDir = resolveDataDir(System.getenv(), LOGGER);
         RuntimeFlags runtimeFlags = resolveRuntimeFlags(System.getenv(), LOGGER::warning);
+        Map<String, String> env = System.getenv();
         boolean devMode = runtimeFlags.devMode();
         boolean authEnabled = runtimeFlags.authEnabled();
         boolean allowInsecureAuthHasher = runtimeFlags.allowInsecureAuthHasher();
@@ -86,11 +89,14 @@ public final class Main {
             LOGGER.warning("envCollector is not configured. Runtime collector config source is backend/config/collectors.json.");
         }
 
-        SiteCollector siteCollector = new SiteCollector(intervalFor(collectorConfigByName, "siteCollector", siteConfig.interval()));
-        RssNewsCollector rssCollector = new RssNewsCollector(intervalFor(collectorConfigByName, "rssCollector", rssConfig.interval()));
-        TicketmasterEventsCollector ticketmasterEventsCollector = new TicketmasterEventsCollector(
-                intervalFor(collectorConfigByName, "localEventsCollector", Duration.ofSeconds(300))
-        );
+        Duration siteInterval = intervalFor(collectorConfigByName, "siteCollector", siteConfig.interval());
+        Duration rssInterval = intervalFor(collectorConfigByName, "rssCollector", rssConfig.interval());
+        Duration localEventsInterval = intervalFor(collectorConfigByName, "localEventsCollector", Duration.ofSeconds(300));
+        SiteCollector siteCollector = new SiteCollector(siteInterval);
+        RssNewsCollector rssCollector = new RssNewsCollector(rssInterval);
+        TicketmasterEventsCollector ticketmasterEventsCollector = new TicketmasterEventsCollector(localEventsInterval);
+        logCollectorConfigSummary(collectorConfigs);
+        logRssConfigSummary(rssConfig, rssInterval);
 
         TicketmasterCollectorConfig ticketmasterConfig = buildTicketmasterConfig(System.getenv(), LOGGER::warning);
 
@@ -165,12 +171,39 @@ public final class Main {
             LOGGER.info("AUTH_ENABLED=false; auth endpoints are disabled.");
         }
 
-        Map<String, Object> configView = Map.of(
+        List<String> corsOrigins = parseCsv(env.getOrDefault(
+                "UI_ALLOWED_ORIGINS",
+                "http://localhost:5173,https://deyyrubsvhyt8.cloudfront.net"
+        ));
+        Set<String> corsAllowedOrigins = new LinkedHashSet<>(corsOrigins);
+        boolean corsAllowCredentials = true;
+        if (corsAllowedOrigins.isEmpty()) {
+            LOGGER.warning("CORS allowed origins list is empty; cross-origin browser requests will be blocked.");
+        } else {
+            LOGGER.info("CORS allowed origins: " + String.join(", ", corsAllowedOrigins));
+        }
+
+        String authCookieSameSite = normalizeSameSite(env.get("AUTH_COOKIE_SAME_SITE"), devMode);
+        String authCookieSecureRaw = env.getOrDefault("AUTH_COOKIE_SECURE", "").trim();
+        boolean authCookieSecure = authCookieSecureRaw.isBlank() ? !devMode : "true".equalsIgnoreCase(authCookieSecureRaw);
+        if ("None".equalsIgnoreCase(authCookieSameSite) && !authCookieSecure) {
+            LOGGER.warning("AUTH_COOKIE_SAME_SITE=None requires Secure; forcing auth cookie Secure=true.");
+            authCookieSecure = true;
+        }
+        LOGGER.info("Auth cookie policy: SameSite=" + authCookieSameSite + ", Secure=" + authCookieSecure);
+
+        Map<String, Object> configView = new java.util.LinkedHashMap<>(Map.of(
                 "collectors", collectorConfigs,
                 "sites", siteConfig,
                 "rss", rssConfig,
                 "dataDir", dataDir.toString()
-        );
+        ));
+        configView.put("rssCollectorIntervalSeconds", rssInterval.toSeconds());
+        configView.put("rssSourceIntervalSeconds", rssConfig.interval().toSeconds());
+        configView.put("corsAllowedOrigins", corsAllowedOrigins);
+        configView.put("corsAllowCredentials", corsAllowCredentials);
+        configView.put("authCookieSameSite", authCookieSameSite);
+        configView.put("authCookieSecure", authCookieSecure);
         Map<String, Object> catalogDefaults = CatalogDefaults.defaults();
         List<String> defaultZips = castToStringList(catalogDefaults.get("defaultZipCodes"));
         java.util.function.Supplier<List<String>> effectiveZipSupplier =
@@ -203,18 +236,23 @@ public final class Main {
                 Clock.systemUTC(),
                 defaultZips
         );
-        EnvCollector envCollector = new EnvCollector(
-                envService,
-                effectiveZipSupplier,
-                intervalFor(collectorConfigByName, "envCollector", Duration.ofSeconds(300))
-        );
+        Duration envInterval = intervalFor(collectorConfigByName, "envCollector", Duration.ofSeconds(300));
+        EnvCollector envCollector = new EnvCollector(envService, effectiveZipSupplier, envInterval);
         registerScheduledCollector(scheduledCollectors, collectorConfigByName, "envCollector", envCollector, context, true);
+        int marketOpenTtlSeconds = Math.max(1, parseIntOrDefault(env.get("MARKET_CACHE_TTL_OPEN_SECONDS"), 15));
+        int marketClosedTtlSeconds = Math.max(1, parseIntOrDefault(env.get("MARKET_CACHE_TTL_CLOSED_SECONDS"), 900));
+        java.time.ZoneId marketZone = java.time.ZoneId.of("America/New_York");
+        configView.put("marketCacheTtlOpenSeconds", marketOpenTtlSeconds);
+        configView.put("marketCacheTtlClosedSeconds", marketClosedTtlSeconds);
+        configView.put("marketTimezone", marketZone.toString());
         MarketDataService marketDataService = new MarketDataService(
                 sharedHttpClient,
                 System.getenv().getOrDefault("MARKETS_BASE_URL", "https://query1.finance.yahoo.com/v7/finance/quote"),
                 Duration.ofSeconds(5),
                 Clock.systemUTC(),
-                Duration.ofMinutes(15)
+                Duration.ofSeconds(marketOpenTtlSeconds),
+                Duration.ofSeconds(marketClosedTtlSeconds),
+                marketZone
         );
 
         List<Collector> collectors = ticketmasterConfig == null
@@ -233,9 +271,12 @@ public final class Main {
                 authService,
                 envService,
                 marketDataService,
-                !devMode,
+                authCookieSecure,
+                authCookieSameSite,
                 devOutboxEnabled,
-                devOutbox
+                devOutbox,
+                corsAllowedOrigins,
+                corsAllowCredentials
         );
         apiServer.setCollectorRefreshHook(collectorsToRun -> scheduler.runOnceCollectors(collectorsToRun));
 
@@ -429,6 +470,45 @@ public final class Main {
         } catch (NumberFormatException ignored) {
             return fallback;
         }
+    }
+
+    private static void logCollectorConfigSummary(List<CollectorConfig> collectors) {
+        LOGGER.info("Collector configuration summary (collectors.json):");
+        for (CollectorConfig collector : collectors) {
+            LOGGER.info("  " + collector.name()
+                    + " enabled=" + collector.enabled()
+                    + " intervalSeconds=" + collector.intervalSeconds());
+        }
+    }
+
+    private static void logRssConfigSummary(RssCollectorConfig rssConfig, Duration rssInterval) {
+        int sourceCount = rssConfig.sources() == null ? 0 : rssConfig.sources().size();
+        int keywordCount = rssConfig.keywords() == null ? 0 : rssConfig.keywords().size();
+        LOGGER.info("RSS configuration summary: rss.intervalSeconds=" + rssConfig.interval().toSeconds()
+                + " topStories=" + rssConfig.topStories()
+                + " sources=" + sourceCount
+                + " keywords=" + keywordCount);
+        LOGGER.info("Scheduling note: rssCollector cadence is controlled by collectors.json intervalSeconds ("
+                + rssInterval.toSeconds() + "s). rss.interval is informational only.");
+    }
+
+    private static String normalizeSameSite(String raw, boolean devMode) {
+        String fallback = devMode ? "Lax" : "None";
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        String normalized = raw.trim();
+        if ("Lax".equalsIgnoreCase(normalized)) {
+            return "Lax";
+        }
+        if ("Strict".equalsIgnoreCase(normalized)) {
+            return "Strict";
+        }
+        if ("None".equalsIgnoreCase(normalized)) {
+            return "None";
+        }
+        LOGGER.warning("Unknown AUTH_COOKIE_SAME_SITE=" + raw + "; defaulting to " + fallback);
+        return fallback;
     }
 
     private static List<String> parseCsv(String raw) {

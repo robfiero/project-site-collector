@@ -1,6 +1,6 @@
 # Today's Overview
 
-Today's Overview is a personal full-stack engineering project that explores a calm, operator-style dashboard for real-time signals such as news, local events, markets, weather, and environmental data. It is intentionally built as a production-style system rather than a prototype, with an emphasis on resilience, observability, incremental development, modern Java concurrency, and an AI-assisted engineering workflow. The backend also has a working AWS deployment path to a public HTTPS endpoint.
+Today's Overview is a personal full-stack engineering project that explores a calm, operator-style dashboard for real-time signals such as news, local events, markets, weather, and environmental data. It is intentionally built as a production-style system rather than a prototype, with an emphasis on resilience, observability, incremental development, modern Java concurrency, and an AI-assisted engineering workflow. The project demonstrates streaming, event-driven ingestion, and a working AWS deployment model (S3/CloudFront for the UI, App Runner for the backend).
 
 This README is structured to work for multiple audiences:
 - A recruiter who wants a quick, clear overview
@@ -28,7 +28,9 @@ This README is structured to work for multiple audiences:
 - Demo-safe operational diagnostics
 - AI-assisted development workflow
 
-## Architecture overview
+## Architecture
+
+The system is organized as a full-stack, event-driven dashboard. A React + Vite frontend is deployed to S3 and served through CloudFront, while a Java 25 backend runs on AWS App Runner and exposes REST + SSE endpoints. Collectors ingest external signals on a schedule, publish events to the event bus, persist snapshots and event logs, and stream updates to the UI via `/api/stream`. Runtime diagnostics and a JSON-backed demo persistence layer round out the system.
 
 High-level flow:
 
@@ -40,20 +42,36 @@ Collectors
 → React Dashboard
 ```
 
-The backend is structured as a collector pipeline that ingests signals on a schedule, stores snapshots/events, and streams live updates to the React UI. The UI renders both the real-time feed and an admin diagnostics view for operational visibility.
+### System Architecture
 
-## Technology stack
+![System Architecture](docs/architecture/system-architecture-diagram.png)
 
-**Backend**
-- Java 25 (preview features enabled)
-- Maven multi-module build
-- REST + SSE service
-- JSON persistence for users, preferences, and signals
+This diagram shows the internal flow from collectors through the scheduler, event bus, event store, and API layer, including SSE streaming to the React UI.
+
+### AWS Deployment
+
+![AWS Deployment](docs/architecture/aws-deployment-diagram.png)
+
+This diagram illustrates the deployment model: the UI is built and deployed to S3 behind CloudFront, while the backend runs as a container on AWS App Runner with secrets sourced from SSM Parameter Store.
+
+## Technology Stack
 
 **Frontend**
-- React + Vite
+- React
+- Vite
 - TypeScript
-- SSE via `EventSource('/api/stream')`
+
+**Backend**
+- Java 25
+- Maven (multi-module)
+- REST + SSE APIs
+
+**Infrastructure**
+- AWS App Runner
+- Amazon ECR
+- Amazon S3
+- CloudFront CDN (response headers policy enabled)
+- AWS Systems Manager Parameter Store
 
 ## AI-Assisted Engineering Workflow
 
@@ -125,6 +143,39 @@ Example (build-time):
 ```bash
 VITE_API_BASE_URL=https://your-backend-service.awsapprunner.com npm run build
 ```
+
+## Debugging
+
+### Backend diagnostics flags
+
+Enable verbose news diagnostics in the backend:
+
+```bash
+DEBUG_NEWS=true ./run-service.sh
+```
+
+This logs:
+- effective selected news sources per request
+- snapshot filtering details
+- per-source RSS fetch success/failure (with status and content-type)
+
+### UI news debugging
+
+Enable UI news debugging (client-side console logs and Admin panel context):
+
+Option A: LocalStorage (recommended)
+
+```js
+localStorage.setItem('todays-overview:debug-news', 'true');
+```
+
+Option B: URL hash flag
+
+```
+http://localhost:5173/#/admin?debugNews=true
+```
+
+Reload after setting either flag.
 
 ## Cloud deployment (AWS)
 
@@ -202,11 +253,11 @@ Apple Silicon Docker builds produced `arm64` images that worked locally but fail
 
 ## Repository scripts
 
-All scripts are at repo root and wrap common backend commands.
+All scripts live under `scripts/` and wrap common backend commands.
 
 ### Build
 
-- `./build.sh`
+- `./scripts/build/build.sh`
 
 What it does:
 - Compiles and packages all backend modules.
@@ -214,25 +265,25 @@ What it does:
 
 ### Run all tests
 
-- `./test.sh`
+- `./scripts/test/test.sh`
 
 What it does:
 - Runs all backend tests in all modules (`mvn test`).
 
 ### Run subset tests
 
-- `./test-core.sh`
+- `./scripts/test/test-core.sh`
   - Runs only `core` module tests (`mvn -pl core test`).
 
-- `./test-collectors.sh`
+- `./scripts/test/test-collectors.sh`
   - Runs `collectors` tests and also builds required dependencies (`mvn -pl collectors -am test`).
 
-- `./test-service.sh`
+- `./scripts/test/test-service.sh`
   - Runs `service` tests and also builds required dependencies (`mvn -pl service -am test`).
 
 ### Coverage baseline (backend + UI)
 
-- `./coverage-baseline.sh`
+- `./scripts/test/coverage-baseline.sh`
 
 What it does:
 - Runs backend tests (`mvn -q test`) and generates JaCoCo reports.
@@ -254,7 +305,7 @@ What it does:
 
 ### Clean outputs
 
-- `./clean.sh`
+- `./scripts/clean.sh`
 
 What it does:
 - Removes backend compiled outputs via Maven clean (`mvn clean`).
@@ -262,13 +313,13 @@ What it does:
 
 ### UI build and deployment
 
-- `./ui-build.sh`
+- `./scripts/build/ui-build.sh`
   - Installs UI dependencies and builds production assets into `ui/dist`.
 
-- `./ui-deploy-s3.sh <s3-bucket> [aws-profile]`
+- `./scripts/deploy/ui-deploy-s3.sh <s3-bucket> [aws-profile]`
   - Syncs `ui/dist` to an S3 bucket using `aws s3 sync --delete`.
 
-- `./ui-cloudfront-invalidate.sh <distribution-id> [paths] [aws-profile]`
+- `./scripts/deploy/ui-cloudfront-invalidate.sh <distribution-id> [paths] [aws-profile]`
   - Creates a CloudFront invalidation (default paths: `/*`).
 
 ## Maven commands (direct)
@@ -540,7 +591,7 @@ To customize:
 An end-to-end auth/reset/preferences demo script is included:
 
 ```bash
-./demo-phase6.sh
+./scripts/demo-phase6.sh
 ```
 
 Optional environment overrides:
@@ -550,7 +601,7 @@ BASE_URL=http://localhost:8080 \
 EMAIL=demo+custom@example.com \
 PASSWORD='Demo!Phase6#Pass123' \
 NEW_PASSWORD='Demo!Phase6#Pass456' \
-./demo-phase6.sh
+./scripts/demo-phase6.sh
 ```
 
 What it verifies:

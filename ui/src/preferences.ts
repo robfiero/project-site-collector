@@ -3,7 +3,7 @@ const WATCHLIST_KEY = 'signal-sentinel:watchlist';
 const MAX_ZIPS = 10;
 
 const DEFAULT_ZIPS = ['02108', '98101'];
-const DEFAULT_WATCHLIST = ['AAPL', 'MSFT', 'SPY', 'BTC-USD', 'ETH-USD'];
+const DEFAULT_WATCHLIST = ['DJIA', '^GSPC', 'ORCL', 'AAPL', 'SBUX', 'HD', 'DIS', 'MSFT', 'AMZN', 'BTC-USD', 'NFLX'];
 
 export function loadZipCodes(): string[] {
   return loadList(ZIPS_KEY, DEFAULT_ZIPS).slice(0, MAX_ZIPS);

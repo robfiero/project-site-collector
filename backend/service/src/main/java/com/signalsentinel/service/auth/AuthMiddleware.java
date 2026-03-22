@@ -39,19 +39,19 @@ public final class AuthMiddleware {
         return user;
     }
 
-    public static String buildAuthCookie(String jwt, boolean secure) {
+    public static String buildAuthCookie(String jwt, boolean secure, String sameSite) {
         StringBuilder cookie = new StringBuilder();
         cookie.append(AUTH_COOKIE_NAME).append("=").append(jwt)
-                .append("; Path=/; HttpOnly; SameSite=Lax; Max-Age=").append(60 * 60 * 8);
+                .append("; Path=/; HttpOnly; SameSite=").append(sameSite).append("; Max-Age=").append(60 * 60 * 8);
         if (secure) {
             cookie.append("; Secure");
         }
         return cookie.toString();
     }
 
-    public static String buildClearCookie(boolean secure) {
+    public static String buildClearCookie(boolean secure, String sameSite) {
         StringBuilder cookie = new StringBuilder();
-        cookie.append(AUTH_COOKIE_NAME).append("=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+        cookie.append(AUTH_COOKIE_NAME).append("=; Path=/; HttpOnly; SameSite=").append(sameSite).append("; Max-Age=0");
         if (secure) {
             cookie.append("; Secure");
         }

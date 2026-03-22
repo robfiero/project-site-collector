@@ -16,7 +16,10 @@ import com.signalsentinel.service.market.MarketDataService;
 import com.signalsentinel.service.store.EventStore;
 import com.signalsentinel.service.store.ServiceSignalStore;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpContext;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.Filter;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -43,6 +46,9 @@ public class ApiServer {
     private static final DiagnosticsTracker EMPTY_DIAGNOSTICS = DiagnosticsTracker.empty();
     private static final Logger LOGGER = Logger.getLogger(ApiServer.class.getName());
     private static final List<String> AUTH_TRANSITION_REFRESH_COLLECTORS = List.of("envCollector", "rssCollector", "localEventsCollector");
+    private static final String NEWS_DEBUG_ENV = "DEBUG_NEWS";
+    private static final String NEWS_DEBUG_PROP = "debug.news";
+    private static final int NEWS_DEBUG_LIST_LIMIT = 12;
 
     private final int port;
     private final ServiceSignalStore signalStore;
@@ -55,9 +61,13 @@ public class ApiServer {
     private final AuthService authService;
     private final EnvService envService;
     private final MarketDataService marketDataService;
-    private final boolean secureCookies;
+    private final boolean authCookieSecure;
+    private final String authCookieSameSite;
     private final boolean devOutboxEnabled;
     private final DevOutboxEmailSender devOutboxEmailSender;
+    private final Set<String> corsAllowedOrigins;
+    private final boolean corsAllowCredentials;
+    private final CorsFilter corsFilter;
     private volatile Consumer<List<String>> collectorRefreshHook;
 
     private HttpServer server;
@@ -82,8 +92,11 @@ public class ApiServer {
                 null,
                 null,
                 false,
+                "Lax",
                 false,
-                null
+                null,
+                Set.of(),
+                false
         );
     }
 
@@ -110,8 +123,11 @@ public class ApiServer {
                 null,
                 null,
                 false,
+                "Lax",
                 false,
-                null
+                null,
+                Set.of(),
+                false
         );
     }
 
@@ -127,9 +143,12 @@ public class ApiServer {
             AuthService authService,
             EnvService envService,
             MarketDataService marketDataService,
-            boolean secureCookies,
+            boolean authCookieSecure,
+            String authCookieSameSite,
             boolean devOutboxEnabled,
-            DevOutboxEmailSender devOutboxEmailSender
+            DevOutboxEmailSender devOutboxEmailSender,
+            Set<String> corsAllowedOrigins,
+            boolean corsAllowCredentials
     ) {
         this.port = port;
         this.signalStore = signalStore;
@@ -142,9 +161,13 @@ public class ApiServer {
         this.authService = authService;
         this.envService = envService;
         this.marketDataService = marketDataService;
-        this.secureCookies = secureCookies;
+        this.authCookieSecure = authCookieSecure;
+        this.authCookieSameSite = authCookieSameSite;
         this.devOutboxEnabled = devOutboxEnabled;
         this.devOutboxEmailSender = devOutboxEmailSender;
+        this.corsAllowedOrigins = corsAllowedOrigins == null ? Set.of() : Set.copyOf(corsAllowedOrigins);
+        this.corsAllowCredentials = corsAllowCredentials;
+        this.corsFilter = new CorsFilter(this.corsAllowedOrigins, this.corsAllowCredentials);
     }
 
     public ApiServer(
@@ -157,9 +180,12 @@ public class ApiServer {
             Map<String, Object> catalogDefaults,
             Map<String, Object> configView,
             AuthService authService,
-            boolean secureCookies,
+            boolean authCookieSecure,
+            String authCookieSameSite,
             boolean devOutboxEnabled,
-            DevOutboxEmailSender devOutboxEmailSender
+            DevOutboxEmailSender devOutboxEmailSender,
+            Set<String> corsAllowedOrigins,
+            boolean corsAllowCredentials
     ) {
         this(
                 port,
@@ -173,9 +199,12 @@ public class ApiServer {
                 authService,
                 null,
                 null,
-                secureCookies,
+                authCookieSecure,
+                authCookieSameSite,
                 devOutboxEnabled,
-                devOutboxEmailSender
+                devOutboxEmailSender,
+                corsAllowedOrigins,
+                corsAllowCredentials
         );
     }
 
@@ -183,31 +212,31 @@ public class ApiServer {
         try {
             server = HttpServer.create(new InetSocketAddress(port), 0);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-            server.createContext("/api/health", this::handleHealth);
-            server.createContext("/api/signals", this::handleSignals);
-            server.createContext("/api/events", this::handleEvents);
-            server.createContext("/api/collectors", this::handleCollectors);
-            server.createContext("/api/collectors/refresh", this::handleCollectorRefresh);
-            server.createContext("/api/collectors/status", this::handleCollectorStatus);
-            server.createContext("/api/metrics", this::handleMetrics);
-            server.createContext("/api/catalog/defaults", this::handleCatalogDefaults);
-            server.createContext("/api/settings/newsSources", this::handleNewsSourceSettings);
-            server.createContext("/api/settings/reset", this::handleSettingsReset);
-            server.createContext("/api/config", this::handleConfig);
-            server.createContext("/api/env", this::handleEnvironment);
-            server.createContext("/api/markets", this::handleMarkets);
-            server.createContext("/api/admin/trends", this::handleAdminTrends);
-            server.createContext("/api/admin/email/preview", this::handleAdminEmailPreview);
-            server.createContext("/api/auth/signup", this::handleSignup);
-            server.createContext("/api/auth/login", this::handleLogin);
-            server.createContext("/api/auth/logout", this::handleLogout);
-            server.createContext("/api/auth/forgot", this::handleForgotPassword);
-            server.createContext("/api/auth/reset", this::handleResetPassword);
-            server.createContext("/api/me", this::handleMe);
-            server.createContext("/api/me/delete", this::handleAccountDelete);
-            server.createContext("/api/me/preferences", this::handlePreferences);
-            server.createContext("/api/dev/outbox", this::handleDevOutbox);
-            server.createContext("/api/stream", sseBroadcaster::handle);
+            registerContext("/api/health", this::handleHealth);
+            registerContext("/api/signals", this::handleSignals);
+            registerContext("/api/events", this::handleEvents);
+            registerContext("/api/collectors", this::handleCollectors);
+            registerContext("/api/collectors/refresh", this::handleCollectorRefresh);
+            registerContext("/api/collectors/status", this::handleCollectorStatus);
+            registerContext("/api/metrics", this::handleMetrics);
+            registerContext("/api/catalog/defaults", this::handleCatalogDefaults);
+            registerContext("/api/settings/newsSources", this::handleNewsSourceSettings);
+            registerContext("/api/settings/reset", this::handleSettingsReset);
+            registerContext("/api/config", this::handleConfig);
+            registerContext("/api/env", this::handleEnvironment);
+            registerContext("/api/markets", this::handleMarkets);
+            registerContext("/api/admin/trends", this::handleAdminTrends);
+            registerContext("/api/admin/email/preview", this::handleAdminEmailPreview);
+            registerContext("/api/auth/signup", this::handleSignup);
+            registerContext("/api/auth/login", this::handleLogin);
+            registerContext("/api/auth/logout", this::handleLogout);
+            registerContext("/api/auth/forgot", this::handleForgotPassword);
+            registerContext("/api/auth/reset", this::handleResetPassword);
+            registerContext("/api/me", this::handleMe);
+            registerContext("/api/me/delete", this::handleAccountDelete);
+            registerContext("/api/me/preferences", this::handlePreferences);
+            registerContext("/api/dev/outbox", this::handleDevOutbox);
+            registerContext("/api/stream", sseBroadcaster::handle);
             server.start();
         } catch (IOException e) {
             throw new IllegalStateException("Failed starting API server", e);
@@ -231,8 +260,13 @@ public class ApiServer {
         this.collectorRefreshHook = collectorRefreshHook;
     }
 
+    private void registerContext(String path, HttpHandler handler) {
+        HttpContext context = server.createContext(path, handler);
+        context.getFilters().add(corsFilter);
+    }
+
     private void handleHealth(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         writeJson(exchange, 200, Map.of(
@@ -266,13 +300,26 @@ public class ApiServer {
     }
 
     private void handleSignals(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         Map<String, Object> snapshot = new HashMap<>(signalStore.getAllSignals());
         Object news = snapshot.get("news");
         if (news instanceof Map<?, ?> newsMap) {
             Set<String> selected = effectiveSelectedNewsSources(exchange);
+            if (isNewsDebugEnabled()) {
+                Set<String> available = availableNewsSourceIds();
+                List<String> snapshotIds = extractStringKeys(newsMap);
+                List<String> missingSelected = selected.stream()
+                        .filter(id -> !snapshotIds.contains(id))
+                        .toList();
+                logNewsDebug("Signals news snapshot before filtering: totalSources=" + newsMap.size()
+                        + " selectedCount=" + selected.size()
+                        + " availableCount=" + available.size()
+                        + " snapshotSources=" + sampleList(snapshotIds)
+                        + " selectedSources=" + sampleList(selected)
+                        + " missingSelected=" + sampleList(missingSelected));
+            }
             Map<String, Object> filtered = new HashMap<>();
             for (Map.Entry<?, ?> entry : newsMap.entrySet()) {
                 if (!(entry.getKey() instanceof String sourceId)) {
@@ -283,7 +330,12 @@ public class ApiServer {
                 }
                 filtered.put(sourceId, entry.getValue());
             }
+            if (isNewsDebugEnabled()) {
+                logNewsDebug("Signals news snapshot after filtering: keptSources=" + filtered.size());
+            }
             snapshot.put("news", filtered);
+        } else if (isNewsDebugEnabled()) {
+            logNewsDebug("Signals snapshot missing news map or news is not a map.");
         }
         Object localHappenings = snapshot.get("localHappenings");
         if (localHappenings instanceof Map<?, ?> happeningsMap) {
@@ -304,7 +356,7 @@ public class ApiServer {
     }
 
     private void handleEvents(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
 
@@ -326,7 +378,7 @@ public class ApiServer {
     }
 
     private void handleCollectors(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         List<Map<String, Object>> dto = new ArrayList<>();
@@ -366,21 +418,21 @@ public class ApiServer {
     }
 
     private void handleCollectorStatus(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         writeJson(exchange, 200, diagnostics().collectorsSnapshot());
     }
 
     private void handleMetrics(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         writeJson(exchange, 200, diagnostics().metricsSnapshot());
     }
 
     private void handleCatalogDefaults(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         writeJson(exchange, 200, catalogDefaults);
@@ -388,9 +440,16 @@ public class ApiServer {
 
     private void handleNewsSourceSettings(HttpExchange exchange) throws IOException {
         if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            List<Map<String, Object>> availableSources = availableNewsSources();
+            List<String> effectiveSelectedSources = new ArrayList<>(effectiveSelectedNewsSources(exchange));
+            if (isNewsDebugEnabled()) {
+                logNewsDebug("News settings GET: availableSources=" + availableSources.size()
+                        + " effectiveSelectedSources=" + effectiveSelectedSources.size()
+                        + " selectedSources=" + sampleList(effectiveSelectedSources));
+            }
             writeJson(exchange, 200, Map.of(
-                    "availableSources", availableNewsSources(),
-                    "effectiveSelectedSources", new ArrayList<>(effectiveSelectedNewsSources(exchange))
+                    "availableSources", availableSources,
+                    "effectiveSelectedSources", effectiveSelectedSources
             ));
             return;
         }
@@ -417,12 +476,23 @@ public class ApiServer {
                 requested = coerceStringList(body.get("newsSourceIds"));
             }
             Set<String> availableIds = availableNewsSourceIds();
-            List<String> validated = requested.stream()
+            List<String> normalizedRequested = requested.stream()
                     .map(String::trim)
                     .filter(id -> !id.isBlank())
-                    .filter(availableIds::contains)
                     .distinct()
                     .toList();
+            List<String> validated = normalizedRequested.stream()
+                    .filter(availableIds::contains)
+                    .toList();
+            if (isNewsDebugEnabled()) {
+                List<String> rejected = normalizedRequested.stream()
+                        .filter(id -> !availableIds.contains(id))
+                        .toList();
+                logNewsDebug("News settings PUT: requested=" + sampleList(normalizedRequested)
+                        + " validated=" + sampleList(validated)
+                        + " rejected=" + sampleList(rejected)
+                        + " availableCount=" + availableIds.size());
+            }
 
             UserPreferences existing = authService.getPreferences(user.get().id());
             UserPreferences updated = authService.updatePreferences(
@@ -448,7 +518,7 @@ public class ApiServer {
     }
 
     private void handleConfig(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         writeJson(exchange, 200, configView);
@@ -513,7 +583,7 @@ public class ApiServer {
     }
 
     private void handleEnvironment(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         if (envService == null) {
@@ -532,7 +602,7 @@ public class ApiServer {
     }
 
     private void handleAdminTrends(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         if (authService == null) {
@@ -547,7 +617,7 @@ public class ApiServer {
     }
 
     private void handleAdminEmailPreview(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         if (authService == null) {
@@ -601,7 +671,7 @@ public class ApiServer {
     }
 
     private void handleMarkets(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         if (marketDataService == null) {
@@ -635,7 +705,7 @@ public class ApiServer {
             String email = String.valueOf(body.getOrDefault("email", ""));
             String password = String.valueOf(body.getOrDefault("password", ""));
             AuthService.AuthResult result = authService.signup(email, password);
-            exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildAuthCookie(result.jwt(), secureCookies));
+            exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildAuthCookie(result.jwt(), authCookieSecure, authCookieSameSite));
             writeJson(exchange, 200, Map.of("id", result.userId(), "email", result.email()));
         } catch (IllegalArgumentException badInput) {
             writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
@@ -655,7 +725,7 @@ public class ApiServer {
             String email = String.valueOf(body.getOrDefault("email", ""));
             String password = String.valueOf(body.getOrDefault("password", ""));
             AuthService.AuthResult result = authService.login(email, password);
-            exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildAuthCookie(result.jwt(), secureCookies));
+            exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildAuthCookie(result.jwt(), authCookieSecure, authCookieSameSite));
             writeJson(exchange, 200, Map.of("id", result.userId(), "email", result.email()));
             triggerAuthTransitionRefresh();
         } catch (IllegalArgumentException badInput) {
@@ -671,13 +741,13 @@ public class ApiServer {
             writeJson(exchange, 404, Map.of("error", "auth_disabled"));
             return;
         }
-        exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildClearCookie(secureCookies));
+        exchange.getResponseHeaders().add("Set-Cookie", AuthMiddleware.buildClearCookie(authCookieSecure, authCookieSameSite));
         writeJson(exchange, 200, Map.of("status", "ok"));
         triggerAuthTransitionRefresh();
     }
 
     private void handleMe(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         if (authService == null) {
@@ -752,7 +822,7 @@ public class ApiServer {
     }
 
     private void handleDevOutbox(HttpExchange exchange) throws IOException {
-        if (!ensureGet(exchange, true)) {
+        if (!ensureGet(exchange)) {
             return;
         }
         if (!devOutboxEnabled || devOutboxEmailSender == null) {
@@ -772,17 +842,7 @@ public class ApiServer {
         writeJson(exchange, 200, sanitized);
     }
 
-    private boolean ensureGet(HttpExchange exchange, boolean corsEnabled) throws IOException {
-        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
-            if (corsEnabled) {
-                exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-                exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET,OPTIONS");
-                exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-            }
-            exchange.sendResponseHeaders(204, -1);
-            exchange.close();
-            return false;
-        }
+    private boolean ensureGet(HttpExchange exchange) throws IOException {
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
@@ -803,10 +863,57 @@ public class ApiServer {
     private void writeJson(HttpExchange exchange, int status, Object body) throws IOException {
         byte[] payload = JsonUtils.objectMapper().writeValueAsBytes(body);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.sendResponseHeaders(status, payload.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(payload);
+        }
+    }
+
+    private static final class CorsFilter extends Filter {
+        private static final String ALLOW_METHODS = "GET, POST, PUT, DELETE, OPTIONS";
+        private static final String ALLOW_HEADERS = "Content-Type, Authorization";
+        private final Set<String> allowedOrigins;
+        private final boolean allowCredentials;
+
+        private CorsFilter(Set<String> allowedOrigins, boolean allowCredentials) {
+            this.allowedOrigins = allowedOrigins == null ? Set.of() : allowedOrigins;
+            this.allowCredentials = allowCredentials;
+        }
+
+        @Override
+        public void doFilter(HttpExchange exchange, Chain chain) throws IOException {
+            String origin = exchange.getRequestHeaders().getFirst("Origin");
+            boolean originAllowed = origin != null && allowedOrigins.contains(origin);
+
+            if (origin != null) {
+                LOGGER.info(() -> "CORS " + (originAllowed ? "allow" : "deny")
+                        + " origin=" + origin
+                        + " method=" + exchange.getRequestMethod()
+                        + " path=" + exchange.getRequestURI().getPath());
+            }
+
+            if (originAllowed) {
+                exchange.getResponseHeaders().set("Access-Control-Allow-Origin", origin);
+                exchange.getResponseHeaders().add("Vary", "Origin");
+                exchange.getResponseHeaders().set("Access-Control-Allow-Methods", ALLOW_METHODS);
+                exchange.getResponseHeaders().set("Access-Control-Allow-Headers", ALLOW_HEADERS);
+                if (allowCredentials) {
+                    exchange.getResponseHeaders().set("Access-Control-Allow-Credentials", "true");
+                }
+            }
+
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+
+            chain.doFilter(exchange);
+        }
+
+        @Override
+        public String description() {
+            return "CORS filter";
         }
     }
 
@@ -953,10 +1060,16 @@ public class ApiServer {
     private Set<String> effectiveSelectedNewsSources(HttpExchange exchange) {
         List<String> defaults = defaultSelectedNewsSources();
         if (authService == null) {
+            if (isNewsDebugEnabled()) {
+                logNewsDebug("Effective news sources: auth disabled, using defaults=" + sampleList(defaults));
+            }
             return new LinkedHashSet<>(defaults);
         }
         Optional<AuthUser> user = AuthMiddleware.readAuthCookie(exchange).flatMap(authService::userForToken);
         if (user.isEmpty()) {
+            if (isNewsDebugEnabled()) {
+                logNewsDebug("Effective news sources: unauthenticated, using defaults=" + sampleList(defaults));
+            }
             return new LinkedHashSet<>(defaults);
         }
         UserPreferences preferences = authService.getPreferences(user.get().id());
@@ -970,6 +1083,12 @@ public class ApiServer {
         }
         if (normalized.isEmpty()) {
             normalized.addAll(defaults);
+        }
+        if (isNewsDebugEnabled()) {
+            logNewsDebug("Effective news sources: user=" + user.get().id()
+                    + " selected=" + sampleList(selected)
+                    + " availableCount=" + available.size()
+                    + " normalized=" + sampleList(normalized));
         }
         return normalized;
     }
@@ -1051,5 +1170,59 @@ public class ApiServer {
             }
         }
         return List.of();
+    }
+
+    private static boolean isNewsDebugEnabled() {
+        String env = System.getenv(NEWS_DEBUG_ENV);
+        if (env == null || env.isBlank()) {
+            env = System.getProperty(NEWS_DEBUG_PROP);
+        }
+        return isTruthy(env);
+    }
+
+    private static boolean isTruthy(String raw) {
+        if (raw == null) {
+            return false;
+        }
+        String normalized = raw.trim();
+        return "true".equalsIgnoreCase(normalized)
+                || "1".equals(normalized)
+                || "yes".equalsIgnoreCase(normalized)
+                || "on".equalsIgnoreCase(normalized);
+    }
+
+    private void logNewsDebug(String message) {
+        LOGGER.info(() -> "[news-debug] " + message);
+    }
+
+    private static List<String> extractStringKeys(Map<?, ?> map) {
+        List<String> keys = new ArrayList<>();
+        for (Object key : map.keySet()) {
+            if (key instanceof String value) {
+                keys.add(value);
+            }
+        }
+        return keys;
+    }
+
+    private static String sampleList(Iterable<String> values) {
+        List<String> samples = new ArrayList<>();
+        int count = 0;
+        for (String value : values) {
+            if (value == null) {
+                continue;
+            }
+            count++;
+            if (samples.size() < NEWS_DEBUG_LIST_LIMIT) {
+                samples.add(value);
+            }
+        }
+        if (count == 0) {
+            return "[]";
+        }
+        if (count <= NEWS_DEBUG_LIST_LIMIT) {
+            return samples.toString();
+        }
+        return samples + " (+" + (count - NEWS_DEBUG_LIST_LIMIT) + " more)";
     }
 }

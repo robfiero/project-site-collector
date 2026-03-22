@@ -246,6 +246,10 @@ export interface MetricsResponse {
   eventsEmittedTotal: number;
   recentEventsPerMinute: number;
   collectors: Record<string, CollectorStatus>;
+  newsSources?: Record<string, {
+    lastSuccessAt: string | null;
+    lastStoryCount: number | null;
+  }>;
 }
 
 export interface CatalogDefaults {

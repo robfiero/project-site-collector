@@ -41,6 +41,7 @@ const defaultEmailPreview: AdminEmailPreview = {
 };
 
 const emptySignals: SignalsSnapshot['sites'][string][] = [];
+const emptyNewsSnapshot: SignalsSnapshot['news'] = {};
 const emptyCollectorStatus: Record<string, CollectorStatus> = {};
 
 afterEach(() => {
@@ -58,6 +59,8 @@ function renderDashboard(overrides?: Partial<ComponentProps<typeof AdminDashboar
       siteEntries={emptySignals}
       catalogDefaults={emptyDefaults}
       configView={{}}
+      selectedNewsSourceIds={[]}
+      newsSnapshot={emptyNewsSnapshot}
       filteredEvents={[]}
       eventTypeFilter="ALL"
       setEventTypeFilter={vi.fn()}
@@ -279,7 +282,7 @@ describe('AdminDashboard', () => {
       trendsError: 'Admin trends request failed (401)',
       emailPreviewError: 'Admin email preview request failed (401)'
     });
-    expect(screen.getByText(/Unauthorized\. Please log in/)).toBeTruthy();
+    expect(screen.getByText(/Session expired\. Please log in again\./)).toBeTruthy();
     expect(screen.queryByRole('img', { name: 'Collector runs: success' })).toBeNull();
   });
 

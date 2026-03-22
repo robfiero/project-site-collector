@@ -13,14 +13,15 @@ public final class NewsSourceCatalog {
             new NewsSource("npr_morning_edition", "NPR Morning Edition", "rss", "https://www.kuow.org/feeds/podcasts/morning-edition/podcasts/rss.xml", false, false, null),
             new NewsSource("nbc", "NBC News", "rss", "https://feeds.nbcnews.com/nbcnews/public/news", false, false, null),
             new NewsSource("cbs", "CBS News", "rss", "https://www.cbsnews.com/latest/rss/main", false, false, null),
-            new NewsSource("cnn", "CNN", "rss", "http://rss.cnn.com/rss/cnn_topstories.rss", true, false, null),
+            new NewsSource("ap", "AP News", "rss", "https://feeds.apnews.com/apf-topnews", true, false, null),
+            new NewsSource("google_news", "Google News (US)", "rss", "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", true, false, null),
             new NewsSource("fox", "Fox News", "rss", "https://moxie.foxnews.com/google-publisher/latest.xml", false, false, null),
             new NewsSource("wsj", "Wall Street Journal", "rss", "https://feeds.a.dj.com/rss/RSSWorldNews.xml", true, false, null),
             new NewsSource("abc", "ABC News", "rss", "https://feeds.abcnews.com/abcnews/topstories", false, false, null),
             new NewsSource("verge", "The Verge", "rss", "https://www.theverge.com/rss/index.xml", true, false, null)
     );
 
-    private static final List<String> DEFAULT_SELECTED = List.of("cnn", "wsj", "verge");
+    private static final List<String> DEFAULT_SELECTED = List.of("ap", "google_news", "wsj", "verge");
 
     private NewsSourceCatalog() {
     }

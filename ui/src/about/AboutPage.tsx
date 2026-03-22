@@ -27,7 +27,7 @@ export default function AboutPage() {
           </div>
         </div>
         <p>
-          Today&apos;s Overview is a personal engineering project focused on building a calm, operator-style dashboard for real-time signals. It brings together news, local events, markets, and environmental data into a compact view designed to be scanned quickly.
+          Today&apos;s Overview is a personal engineering project focused on building an operator-style dashboard for real-time signals. It brings together news, local events, markets, weather, and air quality data into a compact view designed to be scanned quickly.
         </p>
         <p>
           The goal is to build something closer to a small control room than a traditional feed: focused, data-rich, and resilient when upstream systems behave imperfectly.

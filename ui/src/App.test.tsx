@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { formatPlaceLabel } from './places';
 
 vi.mock('./api', () => ({
   fetchHealth: vi.fn(async () => ({ status: 'ok', version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' })),
@@ -49,7 +50,8 @@ vi.mock('./api', () => ({
   })),
   triggerCollectorRefresh: vi.fn(async () => {}),
   forgotPassword: vi.fn(async () => {}),
-  resetPassword: vi.fn(async () => {})
+  resetPassword: vi.fn(async () => {}),
+  setUnauthorizedHandler: vi.fn()
 }));
 
 class FakeEventSource {
@@ -144,36 +146,58 @@ describe('App', () => {
     window.location.hash = '#/settings';
     render(<App />);
 
-    const zipInput = await screen.findByPlaceholderText('ZIP (e.g., 02108)');
-    fireEvent.change(zipInput, { target: { value: '60601' } });
+    const zipInput = await screen.findByPlaceholderText('ZIPs (e.g., 02108, 98101)');
+    fireEvent.change(zipInput, { target: { value: '60601, 98101' } });
     fireEvent.keyDown(zipInput, { key: 'Enter', code: 'Enter', charCode: 13 });
     fireEvent.submit(zipInput.closest('form') as HTMLFormElement);
 
-    const symbolInput = screen.getByPlaceholderText('Symbol (e.g., NVDA)');
-    fireEvent.change(symbolInput, { target: { value: 'tsla' } });
+    const symbolInput = screen.getByPlaceholderText('Symbols (e.g., AAPL, MSFT, BTC-USD)');
+    fireEvent.change(symbolInput, { target: { value: 'tsla, msft' } });
     fireEvent.keyDown(symbolInput, { key: 'Enter', code: 'Enter', charCode: 13 });
     fireEvent.submit(symbolInput.closest('form') as HTMLFormElement);
 
-    expect(screen.getByText('ZIP 60601')).toBeTruthy();
-    expect(screen.getByText(/TSLA/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(formatPlaceLabel('60601'))).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(formatPlaceLabel('98101'))).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/TSLA/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/MSFT/)).toBeTruthy());
+  });
+
+  it('bulk adds ZIPs and symbols with invalid entries filtered', async () => {
+    window.location.hash = '#/settings';
+    render(<App />);
+
+    const zipInput = await screen.findByPlaceholderText('ZIPs (e.g., 02108, 98101)');
+    fireEvent.change(zipInput, { target: { value: '02108, 1234, 98101, 02108' } });
+    fireEvent.submit(zipInput.closest('form') as HTMLFormElement);
+
+    const symbolInput = screen.getByPlaceholderText('Symbols (e.g., AAPL, MSFT, BTC-USD)');
+    fireEvent.change(symbolInput, { target: { value: 'aapl, msft, $bad, btc-usd, aapl' } });
+    fireEvent.submit(symbolInput.closest('form') as HTMLFormElement);
+
+    expect(screen.getByText(formatPlaceLabel('02108'))).toBeTruthy();
+    expect(screen.getByText(formatPlaceLabel('98101'))).toBeTruthy();
+    expect(screen.queryByText('ZIP 1234')).toBeNull();
+    expect(screen.getByText(/AAPL/)).toBeTruthy();
+    expect(screen.getByText(/MSFT/)).toBeTruthy();
+    expect(screen.getByText(/BTC-USD/)).toBeTruthy();
   });
 
   it('shows inline validation and disables Add buttons for invalid settings input', async () => {
     window.location.hash = '#/settings';
     render(<App />);
 
-    const addZipButton = await screen.findByRole('button', { name: 'Add ZIP' });
-    const zipInput = screen.getByPlaceholderText('ZIP (e.g., 02108)');
+    const addZipButton = await screen.findByRole('button', { name: 'Add ZIPs' });
+    const zipInput = screen.getByPlaceholderText('ZIPs (e.g., 02108, 98101)');
     fireEvent.change(zipInput, { target: { value: '12ab' } });
     expect(addZipButton.hasAttribute('disabled')).toBe(true);
-    expect(screen.getByText('Enter a 5-digit ZIP')).toBeTruthy();
+    expect(screen.getByText('Enter 5-digit ZIPs separated by commas.')).toBeTruthy();
 
-    const addSymbolButton = screen.getByRole('button', { name: 'Add Symbol' });
-    const symbolInput = screen.getByPlaceholderText('Symbol (e.g., NVDA)');
+    const addSymbolButton = screen.getByRole('button', { name: 'Add Symbols' });
+    const symbolInput = screen.getByPlaceholderText('Symbols (e.g., AAPL, MSFT, BTC-USD)');
     fireEvent.change(symbolInput, { target: { value: '' } });
     expect(addSymbolButton.hasAttribute('disabled')).toBe(true);
     fireEvent.submit(symbolInput.closest('form') as HTMLFormElement);
-    expect(screen.getByText('Enter a symbol (e.g., NVDA)')).toBeTruthy();
+    expect(screen.getByText('Enter comma-separated symbols.')).toBeTruthy();
   });
 
   it('deletes account from user menu and returns to signed-out state', async () => {
@@ -317,7 +341,7 @@ describe('App', () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Environment' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Weather & Air Quality' })).toBeTruthy());
     expect(screen.queryByRole('heading', { name: 'Places' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Markets Watchlist' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Air Quality (AQI)' })).toBeNull();
@@ -538,7 +562,7 @@ describe('App', () => {
     ]);
 
     render(<App />);
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Environment' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Weather & Air Quality' })).toBeTruthy());
     expect(screen.queryByText(/1970/)).toBeNull();
   });
 
@@ -767,7 +791,7 @@ describe('App', () => {
     ]);
 
     render(<App />);
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Environment' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Weather & Air Quality' })).toBeTruthy());
     expect(screen.getAllByText('Unable to resolve ZIP to location. Try a nearby ZIP code.').length).toBeGreaterThan(0);
   });
 
@@ -812,7 +836,7 @@ describe('App', () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByText(/Unauthorized\. Please log in to view admin diagnostics\./)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Session expired\. Please log in again\./)).toBeTruthy());
     expect(screen.queryByRole('img', { name: 'Collector runs: success' })).toBeNull();
   });
 
@@ -922,7 +946,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: "Today's Overview" })).toBeTruthy());
     expect(screen.queryByText('Backend health: degraded')).toBeNull();
     expect(screen.getByRole('link', { name: 'Sign In' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: /Environment/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /Weather & Air Quality/i })).toBeTruthy();
   });
 
   it('renders about page content', async () => {
@@ -1073,8 +1097,8 @@ describe('App', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByText('Boston, MA (02108)')).toBeTruthy());
-    fireEvent.change(screen.getByPlaceholderText('ZIP (e.g., 02108)'), { target: { value: '98101' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add ZIP' }));
+    fireEvent.change(screen.getByPlaceholderText('ZIPs (e.g., 02108, 98101)'), { target: { value: '98101' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add ZIPs' }));
 
     await waitFor(() =>
       expect(api.saveMyPreferences).toHaveBeenLastCalledWith({
@@ -1102,8 +1126,8 @@ describe('App', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByText('Boston, MA (02108)')).toBeTruthy());
-    fireEvent.change(screen.getByPlaceholderText('ZIP (e.g., 02108)'), { target: { value: '98101' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add ZIP' }));
+    fireEvent.change(screen.getByPlaceholderText('ZIPs (e.g., 02108, 98101)'), { target: { value: '98101' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add ZIPs' }));
 
     await waitFor(() => expect(screen.getByText('Session expired — please sign in again.')).toBeTruthy());
     await waitFor(() => expect(screen.queryByRole('link', { name: /settings/i })).toBeNull());
