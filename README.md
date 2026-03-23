@@ -127,6 +127,7 @@ Test Results: 209 tests passing
 ## Running locally
 
 ### Backend
+```bash
 cd scripts
 ./release-backend.sh dev
 
