@@ -34,15 +34,17 @@ Public demo of the deployed system running on AWS.
 
 ## Architecture
 
-The system is organized as a full-stack, event-driven dashboard. A React + Vite frontend is deployed to S3 and served through CloudFront, while a Java 25 backend runs on AWS App Runner and exposes REST + SSE endpoints. Collectors ingest external signals on a schedule, publish events, persist snapshots, and stream updates to the UI.
+The system is organized as a full-stack, event-driven dashboard. A React + Vite frontend is deployed to S3 and served through CloudFront, while a Java 25 backend runs on AWS App Runner and exposes REST + SSE endpoints.
 
 High-level flow:
 
+```text
 Collectors
 → Scheduler Runtime
 → Event Store
 → REST + SSE Service
 → React Dashboard
+```
 
 ### System Architecture
 
@@ -80,8 +82,6 @@ ChatGPT and Codex were used throughout development to:
 - improve test coverage and iteration speed
 - refine UX and system behavior
 
-These tools acted as accelerators—not substitutes for engineering judgment. Architecture decisions, tradeoffs, and final code review remained intentional and hands-on. This project demonstrates how modern engineers can integrate AI into their workflow while maintaining strong engineering discipline.
-
 ## Project goals
 
 - Build a calm, operator-style dashboard instead of a noisy feed
@@ -93,7 +93,7 @@ These tools acted as accelerators—not substitutes for engineering judgment. Ar
 
 ## Admin / Diagnostics
 
-The Admin / Diagnostics panel demonstrates operational visibility as part of the product. It includes collector health, live activity, and diagnostic tooling, with sensitive values sanitized so it is safe to expose in a public demo.
+Operational visibility tooling including collector health, live activity, and diagnostics, with sensitive data sanitized for safe public demo use.
 
 ## Project metrics
 
@@ -103,13 +103,13 @@ Snapshot metrics (heuristic):
 - ~33k lines of code
 - Java-heavy backend with supporting TypeScript UI
 
-Code Coverage
+## Code Coverage
+
 The backend is built with comprehensive test coverage across three modules:
 
-Overall: 87% instruction coverage, 64% branch coverage, 909 LOC tested
-Core: 97% instruction coverage, 88% branch coverage (33 classes)
-Collectors: 85% instruction coverage, 63% branch coverage (22 classes)
-Test Results: 209 tests passing
+- **Overall:** 87% instruction coverage, 64% branch coverage, 909 LOC tested  
+- **Core:** 97% instruction coverage, 88% branch coverage (33 classes)  
+- **Collectors:** 85% instruction coverage, 63% branch coverage (22 classes)
 
 ## Security notes
 
@@ -127,17 +127,24 @@ Test Results: 209 tests passing
 ## Running locally
 
 ### Backend
+
 ```bash
 cd scripts
 ./release-backend.sh dev
+```
 
-Runs at http://localhost:8080
+Runs at: http://localhost:8080
 
 ### UI
+
+```bash
 cd scripts
 ./release-ui.sh dev
+```
 
-Runs at http://localhost:5173
+Runs at: http://localhost:5173
+
+---
 
 ## Cloud deployment (AWS)
 
@@ -147,15 +154,24 @@ The system is deployed on AWS:
 - UI: S3 + CloudFront
 - Secrets: AWS Systems Manager Parameter Store
 
-Deployment is handled via:
+### Deployment commands
 
-- release-backend.sh — build and deploy backend
+**Backend**
+
+```bash
 ./scripts/release-backend.sh prod <repository> <app-runner-service-arn> [aws-profile]
+```
 
-- release-ui.sh — build and deploy UI
+**UI**
+
+```bash
 ./scripts/release-ui.sh prod <s3-bucket> <cloudfront-distribution-id> [aws-profile]
+```
 
-Additional scripts exist under scripts/ for testing and local workflows.
+## Repository scripts
+
+- `release-backend.sh` — build and deploy backend
+- `release-ui.sh` — build and deploy UI
 
 ## Future improvements
 
@@ -166,4 +182,4 @@ Additional scripts exist under scripts/ for testing and local workflows.
 
 ## Project status
 
-This is an active personal engineering project and learning system. It is deployed publicly for demonstration purposes and continues to evolve incrementally.
+Active personal engineering project demonstrating production-style system design and modern development practices.
