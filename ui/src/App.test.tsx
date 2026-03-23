@@ -4,7 +4,7 @@ import App from './App';
 import { formatPlaceLabel } from './places';
 
 vi.mock('./api', () => ({
-  fetchHealth: vi.fn(async () => ({ status: 'ok', version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' })),
+  fetchHealth: vi.fn(async () => ({ status: 'ok', version: '1.0.0', buildTime: '2026-03-08', gitSha: 'abc123' })),
   fetchSignals: vi.fn(async () => ({ sites: {}, news: {}, weather: {} })),
   fetchEvents: vi.fn(async () => ([])),
   fetchMetrics: vi.fn(async () => ({ sseClientsConnected: 0, eventsEmittedTotal: 0, recentEventsPerMinute: 0, collectors: {} })),

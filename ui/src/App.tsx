@@ -219,6 +219,57 @@ export default function App() {
   const authRefreshTimerRef = useRef<number | null>(null);
   const lastSavedZipCodesRef = useRef<string[]>(zipCodes);
 
+  const refreshAfterAuthTransition = useCallback(async (targetZips: string[]) => {
+    try {
+      await triggerCollectorRefresh(AUTH_TRANSITION_COLLECTORS);
+    } catch {
+      // Continue with snapshot refresh even when manual collector refresh is unavailable.
+    }
+
+    try {
+      const nextSnapshot = await fetchSignals();
+      setSnapshot(nextSnapshot);
+    } catch {
+      // Keep existing snapshot if fetch fails.
+    }
+
+    try {
+      const statuses = await fetchEnvironment(normalizeZipCodes(targetZips));
+      setEnvByZip(
+        Object.fromEntries(
+          statuses
+            .map((status) => ({ ...status, zip: normalizeZip(status.zip) ?? status.zip }))
+            .map((status) => [status.zip, status])
+        ) as Record<string, EnvStatus>
+      );
+    } catch {
+      // Keep existing env status if refresh fails.
+    }
+  }, []);
+
+  const resolveDefaultZips = useCallback(
+    () => (catalogDefaults.defaultZipCodes.length > 0 ? catalogDefaults.defaultZipCodes.slice(0, 10) : FALLBACK_DEFAULT_ZIPS),
+    [catalogDefaults.defaultZipCodes]
+  );
+  const resolveDefaultWatchlist = useCallback(
+    () => (catalogDefaults.defaultWatchlist.length > 0 ? catalogDefaults.defaultWatchlist : FALLBACK_DEFAULT_WATCHLIST),
+    [catalogDefaults.defaultWatchlist]
+  );
+  const resolveDefaultNewsSources = useCallback(
+    () => (catalogDefaults.defaultSelectedNewsSources ?? FALLBACK_DEFAULT_NEWS_SOURCES),
+    [catalogDefaults.defaultSelectedNewsSources]
+  );
+
+  const applyAnonymousDefaults = useCallback(() => {
+    const nextZips = resolveDefaultZips();
+    setZipCodes(nextZips);
+    setWatchlist(resolveDefaultWatchlist());
+    setSelectedNewsSourceIds(resolveDefaultNewsSources());
+    setThemeMode(DEFAULT_THEME_MODE);
+    setAccent(DEFAULT_ACCENT);
+    void refreshAfterAuthTransition(nextZips);
+  }, [refreshAfterAuthTransition, resolveDefaultZips, resolveDefaultWatchlist, resolveDefaultNewsSources]);
+
   const revalidateAuth = useCallback(async () => {
     try {
       const maybeMe = await fetchMe();
@@ -226,12 +277,12 @@ export default function App() {
         setAuthUser(maybeMe);
         setSessionExpired(false);
       } else {
-        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
       }
     } catch {
       // ignore revalidation errors
     }
-  }, []);
+  }, [applyAnonymousDefaults]);
 
   useEffect(() => {
     const onHashChange = () => setRoute(readRouteFromHash());
@@ -241,12 +292,12 @@ export default function App() {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+      handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
     });
     return () => {
       setUnauthorizedHandler(null);
     };
-  }, []);
+  }, [applyAnonymousDefaults]);
 
   useEffect(() => {
     if (route !== 'auth') {
@@ -402,7 +453,7 @@ export default function App() {
             });
           } catch (prefError) {
             if (isUnauthorizedError(prefError)) {
-              handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+              handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
             } else {
               throw prefError;
             }
@@ -506,7 +557,10 @@ export default function App() {
         return;
       }
       setConnectionState((state) => (state === 'open' ? state : 'connecting'));
-      const source = new EventSource(apiUrl('/api/stream'), { withCredentials: true });
+      const streamUrl = apiUrl('/api/stream');
+      const source = authUser
+        ? new EventSource(streamUrl, { withCredentials: true })
+        : new EventSource(streamUrl);
       eventSourceRef.current = source;
 
       source.onopen = () => {
@@ -876,7 +930,7 @@ export default function App() {
       settingsSavedTimerRef.current = window.setTimeout(() => setSettingsSaveState('idle'), 2000);
     }).catch((error) => {
       if (isUnauthorizedError(error)) {
-        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
         setSettingsSaveState('idle');
         return;
       }
@@ -892,22 +946,11 @@ export default function App() {
     };
   }, []);
 
-  const refreshAfterAuthTransition = async (targetZips: string[]) => {
-    try {
-      await triggerCollectorRefresh(AUTH_TRANSITION_COLLECTORS);
-    } catch {
-      // Continue with snapshot refresh even when manual collector refresh is unavailable.
-    }
+  const refreshAfterZipSave = async (targetZips: string[]) => {
+    const normalizedZips = normalizeZipCodes(targetZips);
 
     try {
-      const nextSnapshot = await fetchSignals();
-      setSnapshot(nextSnapshot);
-    } catch {
-      // Keep existing snapshot if fetch fails.
-    }
-
-    try {
-      const statuses = await fetchEnvironment(normalizeZipCodes(targetZips));
+      const statuses = await fetchEnvironment(normalizedZips);
       setEnvByZip(
         Object.fromEntries(
           statuses
@@ -916,11 +959,9 @@ export default function App() {
         ) as Record<string, EnvStatus>
       );
     } catch {
-      // Keep existing env status if refresh fails.
+      // Keep existing env status if initial resolution fails.
     }
-  };
 
-  const refreshAfterZipSave = async (targetZips: string[]) => {
     try {
       await triggerCollectorRefresh(['envCollector', 'localEventsCollector']);
     } catch {
@@ -928,14 +969,7 @@ export default function App() {
     }
 
     try {
-      const nextSnapshot = await fetchSignals();
-      setSnapshot(nextSnapshot);
-    } catch {
-      // Keep existing snapshot if fetch fails.
-    }
-
-    try {
-      const statuses = await fetchEnvironment(normalizeZipCodes(targetZips));
+      const statuses = await fetchEnvironment(normalizedZips);
       setEnvByZip(
         Object.fromEntries(
           statuses
@@ -945,6 +979,13 @@ export default function App() {
       );
     } catch {
       // Keep existing env status if refresh fails.
+    }
+
+    try {
+      const nextSnapshot = await fetchSignals();
+      setSnapshot(nextSnapshot);
+    } catch {
+      // Keep existing snapshot if fetch fails.
     }
   };
 
@@ -990,7 +1031,7 @@ export default function App() {
       return 'ok';
     } catch (error) {
       if (isUnauthorizedError(error)) {
-        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
       }
       return 'error';
     }
@@ -1198,7 +1239,7 @@ export default function App() {
                   await refreshAfterAuthTransition(prefs.zipCodes);
                 } catch (error) {
                   if (isUnauthorizedError(error)) {
-                    handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage);
+                    handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
                   }
                 }
               })();
@@ -2126,11 +2167,15 @@ function getErrorStatus(error: unknown): number | null {
 function handleSessionExpired(
   setAuthUser: Dispatch<SetStateAction<AuthUserView | null>>,
   setSessionExpired: Dispatch<SetStateAction<boolean>>,
-  setAuthMessage: Dispatch<SetStateAction<string | null>>
+  setAuthMessage: Dispatch<SetStateAction<string | null>>,
+  onExpire?: () => void
 ) {
   setAuthUser(null);
   setSessionExpired(true);
   setAuthMessage(null);
+  if (onExpire) {
+    onExpire();
+  }
 }
 
 function storeIntendedRoute(routeHash: string) {

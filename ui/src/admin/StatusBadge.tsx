@@ -13,7 +13,7 @@ export function classifyStatus(status: string): StatusTone {
   if (['healthy', 'connected', 'enabled', 'ok', 'active', 'success'].includes(normalized)) {
     return 'success';
   }
-  if (['warning', 'degraded', 'reconnecting', 'partial', 'off', 'downstream'].includes(normalized)) {
+  if (['warning', 'degraded', 'reconnecting', 'partial', 'off', 'downstream', 'rate limited', 'rate-limited', 'upstream rate limited'].includes(normalized)) {
     return 'warning';
   }
   if (['error', 'failed', 'failure', 'fatal', 'down', 'offline', 'unauthorized', 'forbidden'].includes(normalized)) {

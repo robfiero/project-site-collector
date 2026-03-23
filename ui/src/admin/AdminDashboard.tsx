@@ -18,6 +18,7 @@ import KpiCard from './KpiCard';
 import CollectorStatusCard from './CollectorStatusCard';
 import ConfigCard from './ConfigCard';
 import EventStreamCard from './EventStreamCard';
+import { isCollectorDegraded, isCollectorRateLimited } from './collectorStatusUtils';
 
 type AdminDashboardProps = {
   health: string;
@@ -53,7 +54,11 @@ type AdminDashboardProps = {
 };
 
 export default function AdminDashboard(props: AdminDashboardProps) {
-  const degraded = props.health !== 'ok' || Object.values(props.collectorStatus).some((status) => status.lastSuccess === false);
+  const collectorStatuses = Object.values(props.collectorStatus);
+  const hasRateLimitedCollector = collectorStatuses.some((status) => isCollectorRateLimited(status));
+  const degraded = props.health !== 'ok' || collectorStatuses.some((status) => isCollectorDegraded(status));
+  const healthLabel = degraded ? 'Warning' : hasRateLimitedCollector ? 'Upstream rate limited' : 'Healthy';
+  const healthTone = degraded ? 'warn' : hasRateLimitedCollector ? 'warn' : 'success';
   const [now, setNow] = useState<number>(Date.now());
   const [trendWindow, setTrendWindow] = useState<'60m' | '6h' | '24h'>('60m');
   const adminUnauthorized = (props.trendsError?.includes('(401)') ?? false) || (props.emailPreviewError?.includes('(401)') ?? false);
@@ -123,8 +128,8 @@ export default function AdminDashboard(props: AdminDashboardProps) {
             icon="●"
             iconTone="health"
             label="Health"
-            tone={degraded ? 'warn' : 'success'}
-            value={<StatusBadge status={degraded ? 'Warning' : 'Healthy'}>{degraded ? 'Warning' : 'Healthy'}</StatusBadge>}
+            tone={healthTone}
+            value={<StatusBadge status={healthLabel}>{healthLabel}</StatusBadge>}
           />
           <KpiCard
             icon="⟳"

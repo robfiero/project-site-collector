@@ -29,13 +29,13 @@ describe('basic fetch wrappers', () => {
 
   it('fetchHealth success returns parsed JSON', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: 'ok', version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' }), {
+      new Response(JSON.stringify({ status: 'ok', version: '1.0.0', buildTime: '2026-03-08', gitSha: 'abc123' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       })
     );
 
-    await expect(fetchHealth()).resolves.toEqual({ status: 'ok', version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' });
+    await expect(fetchHealth()).resolves.toEqual({ status: 'ok', version: '1.0.0', buildTime: '2026-03-08', gitSha: 'abc123' });
   });
 
   it('fetchHealth non-ok throws status error', async () => {

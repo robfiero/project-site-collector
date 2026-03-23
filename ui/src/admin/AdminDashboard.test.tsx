@@ -80,7 +80,7 @@ function renderDashboard(overrides?: Partial<ComponentProps<typeof AdminDashboar
       emailPreview={defaultEmailPreview}
       emailPreviewLoading={false}
       emailPreviewError={null}
-      versionInfo={{ version: '0.1.0', buildTime: '2026-03-08', gitSha: 'abc123' }}
+      versionInfo={{ version: '1.0.0', buildTime: '2026-03-08', gitSha: 'abc123' }}
       {...overrides}
     />
   );
@@ -219,6 +219,25 @@ describe('AdminDashboard', () => {
     const unknown = screen.getByText('Unknown');
     expect(unknown.className).toContain('neutral');
     expect(screen.getByText('temporary network error')).toBeTruthy();
+  });
+
+  it('shows upstream rate limited when only rate limits are present', () => {
+    renderDashboard({
+      health: 'ok',
+      collectorStatus: {
+        rssCollector: {
+          lastRunAt: '2026-02-25T20:00:00Z',
+          lastDurationMillis: 12,
+          lastSuccess: false,
+          lastErrorMessage: 'HTTP 429'
+        }
+      }
+    });
+
+    const healthBadge = screen.getByText('Upstream rate limited');
+    expect(healthBadge.className).toContain('warning');
+    const rateLimited = screen.getByText('Rate Limited');
+    expect(rateLimited.className).toContain('warning');
   });
 
   it('shows email preview error state', () => {

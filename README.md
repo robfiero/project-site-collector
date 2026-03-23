@@ -98,6 +98,56 @@ These tools acted as development accelerators and thought partners during implem
 
 The Admin / Diagnostics panel exists to demonstrate operational visibility as part of the product. It includes tooling for collector health, live activity, email diagnostics, and dev outbox visibility. Sensitive values are sanitized before reaching the browser so the page is safe to show publicly.
 
+## Project metrics
+
+Snapshot metrics (heuristic, from `projmetrics.py`):
+
+- Files counted: 242
+- Total size: 3.4 MB
+- Text files skipped (binary/unreadable): 12
+- Tool files excluded: 2
+- Line counts (heuristic):
+  - Total: 32,854
+  - Code: 29,714
+  - Comment: 56
+  - Blank: 3,084
+
+By extension:
+
+| Extension | Files | Lines | Code | Comment | Blank |
+| --- | --- | --- | --- | --- | --- |
+| `.java` | 142 | 14,964 | 13,180 | 19 | 1,765 |
+| `.json` | 19 | 5,119 | 5,119 | 0 | 0 |
+| `.ts` | 15 | 1,888 | 1,683 | 3 | 202 |
+| `.sh` | 13 | 793 | 654 | 21 | 118 |
+| `.png` | 12 | (binary/unreadable) | - | - | - |
+| `.tsx` | 12 | 5,253 | 4,873 | 13 | 367 |
+| `.xml` | 11 | 664 | 641 | 0 | 23 |
+| `.svg` | 8 | 1,055 | 1,046 | 0 | 9 |
+| `.md` | 4 | 712 | 490 | 0 | 222 |
+| `.env` | 2 | 2 | 2 | 0 | 0 |
+| `.backend` | 1 | 34 | 23 | 0 | 11 |
+| `.html` | 1 | 12 | 12 | 0 | 0 |
+| `.tsbuildinfo` | 1 | 1 | 1 | 0 | 0 |
+| `.css` | 1 | 2,357 | 1,990 | 0 | 367 |
+
+## Code coverage
+
+Coverage is tracked with JaCoCo in the backend build. Latest results should be summarized here after a full test run.
+
+How to generate:
+
+```bash
+cd backend
+mvn clean verify
+```
+
+The aggregated report will be available under:
+
+```
+backend/target/site/jacoco-aggregate/index.html
+```
+
 ## Security notes
 
 - Diagnostics are intentionally visible for demo purposes.
@@ -244,7 +294,7 @@ curl -i https://<service>.awsapprunner.com/api/health
 Successful deployment returns HTTP 200 with a payload similar to:
 
 ```json
-{"status":"ok","buildTime":"","gitSha":"","version":"0.1.0-dev"}
+{"status":"ok","buildTime":"","gitSha":"","version":"1.0.0"}
 ```
 
 ### Deployment lesson learned

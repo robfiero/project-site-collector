@@ -5,4 +5,4 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT/backend"
 
 # Compile/package all backend modules (tests included).
-mvn package
+mvn clean package

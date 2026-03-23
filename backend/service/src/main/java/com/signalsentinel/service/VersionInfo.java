@@ -1,7 +1,7 @@
 package com.signalsentinel.service;
 
 public final class VersionInfo {
-    private static final String DEFAULT_VERSION = "0.1.0-dev";
+    private static final String DEFAULT_VERSION = "1.0.0";
 
     private VersionInfo() {
     }

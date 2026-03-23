@@ -1,5 +1,6 @@
 import type { CollectorStatus } from '../models';
 import StatusBadge from './StatusBadge';
+import { collectorStatusLabel } from './collectorStatusUtils';
 
 type CollectorStatusCardProps = {
   collectorStatus: Record<string, CollectorStatus>;
@@ -39,13 +40,7 @@ export default function CollectorStatusCard(props: CollectorStatusCardProps) {
                   <td>{status.lastDurationMillis ?? '-'}ms</td>
                   <td>
                     <StatusBadge
-                      status={
-                        status.lastSuccess === null || status.lastSuccess === undefined
-                          ? 'Unknown'
-                          : status.lastSuccess
-                            ? 'Healthy'
-                            : 'Failed'
-                      }
+                      status={collectorStatusLabel(status)}
                     />
                   </td>
                 </tr>
