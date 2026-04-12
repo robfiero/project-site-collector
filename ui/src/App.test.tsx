@@ -957,7 +957,7 @@ describe('App', () => {
     expect(screen.getByText(/Why I built this/i)).toBeTruthy();
     expect(screen.getByText(/Key goals/i)).toBeTruthy();
     expect(screen.getByText(/AI-Assisted Engineering Workflow/i)).toBeTruthy();
-    expect(screen.getByText(/Tech stack/i)).toBeTruthy();
+    expect(screen.getByText(/^Backend$/i)).toBeTruthy();
     expect(screen.getAllByText(/Java features used/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Libraries and tooling/i).length).toBeGreaterThan(0);
   });

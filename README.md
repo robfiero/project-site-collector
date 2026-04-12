@@ -48,7 +48,7 @@ Collectors
 
 ### System Architecture
 
-![System Architecture](docs/architecture/system-architecture-diagram.png)
+![System Architecture](docs/architecture/system-architecture-diagram.svg)
 
 ### AWS Deployment
 

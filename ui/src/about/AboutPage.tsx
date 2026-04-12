@@ -1,3 +1,5 @@
+import { useState, useEffect, useCallback } from 'react';
+
 const REPO_BASE = 'https://github.com/robfiero/project-site-collector/blob/main/';
 
 function SourceLink(props: { path: string; label: string }) {
@@ -9,7 +11,34 @@ function SourceLink(props: { path: string; label: string }) {
 }
 
 export default function AboutPage() {
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt] = useState('');
+  const [zoomed, setZoomed] = useState(false);
+
+  const openLightbox = useCallback((src: string, alt: string) => {
+    setLightboxSrc(src);
+    setLightboxAlt(alt);
+    setZoomed(false);
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setLightboxSrc(null);
+    setZoomed(false);
+  }, []);
+
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeLightbox(); };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [lightboxSrc, closeLightbox]);
+
   return (
+    <>
     <main className="settings-page">
       <section className="card">
         <h2>About Today&apos;s Overview</h2>
@@ -27,7 +56,7 @@ export default function AboutPage() {
           </div>
         </div>
         <p>
-          Today&apos;s Overview is a personal engineering project focused on building an operator-style dashboard for real-time signals. It brings together news, local events, markets, weather, and air quality data into a compact view designed to be scanned quickly.
+          Today&apos;s Overview is a personal engineering project focused on building an operator-style dashboard for real-time signals. It brings together six signal types — site monitoring, news, weather, air quality, local events, and market quotes — into a compact view designed to be scanned quickly.
         </p>
         <p>
           The goal is to build something closer to a small control room than a traditional feed: focused, data-rich, and resilient when upstream systems behave imperfectly.
@@ -46,6 +75,7 @@ export default function AboutPage() {
             <li>Stress-testing reliability patterns such as polling, backoff, and graceful failure.</li>
             <li>Building a dashboard that stays readable while underlying data changes continuously.</li>
             <li>Exploring modern Java concurrency and system observability in a real project.</li>
+            <li>Building and operating a complete auth system — signup, login, password reset, and JWT-based sessions.</li>
           </ul>
         </section>
 
@@ -64,34 +94,49 @@ export default function AboutPage() {
 
       <section className="settings-grid">
         <section className="card">
-          <h3>Tech stack</h3>
-          <p className="meta section-description">A focused stack chosen for reliability and clarity.</p>
-          <h4>Backend</h4>
+          <h3>Backend</h3>
+          <p className="meta section-description">Java 25 service with structured concurrency, event-driven collectors, and file-based persistence.</p>
           <ul>
-            <li>Java 25 services using structured concurrency and virtual threads.</li>
-            <li>JSON-based persistence for user state and system signals.</li>
-            <li>Event-driven collectors for news, markets, weather, and local events.</li>
-            <li>Server-Sent Events (SSE) streaming for live diagnostics and updates.</li>
-          </ul>
-          <h4>Frontend</h4>
-          <ul>
-            <li>React + Vite UI.</li>
-            <li>Accessible light/dark themes with customizable accents.</li>
-            <li>Streaming updates from backend event feeds.</li>
-            <li>Diagnostics and operational visibility built directly into the UI.</li>
+            <li>Java 25 with structured concurrency (<code>StructuredTaskScope</code>) and virtual threads for lightweight, high-concurrency collector execution.</li>
+            <li>Three-module Maven build: <code>core</code> (models, events), <code>collectors</code> (data plugins), <code>service</code> (API, auth, scheduling).</li>
+            <li>Pub/Sub event bus using <code>ConcurrentHashMap</code> and <code>CopyOnWriteArrayList</code> for thread-safe fan-out to subscribers.</li>
+            <li>Collector plugin pattern — each source implements a single <code>poll()</code> interface returning a <code>CompletableFuture</code>.</li>
+            <li>JWT + Argon2id authentication with server-side user and preference storage.</li>
+            <li>Server-Sent Events (SSE) streaming via a custom broadcaster with 15-second keepalive heartbeats.</li>
+            <li>JSONL append-only event store for operational replay, trend analysis, and diagnostics.</li>
+            <li>File-based JSON persistence for signals and user state; S3-compatible in production.</li>
+            <li>Deployed on AWS App Runner (Docker / openjdk 25) with an EBS-backed data volume.</li>
           </ul>
         </section>
 
         <section className="card">
-          <h3>Architecture and engineering themes</h3>
-          <p className="meta section-description">Patterns that keep the system resilient and observable.</p>
+          <h3>Frontend</h3>
+          <p className="meta section-description">React 18 + TypeScript UI with real-time SSE updates and no external state library.</p>
           <ul>
-            <li>Collector-based ingestion model.</li>
-            <li>Clear boundaries between ingestion, storage, and presentation.</li>
-            <li>Operational visibility built into the product.</li>
-            <li>Resilience to imperfect upstream systems.</li>
+            <li>React 18 + TypeScript 5.8 — hooks-based state management (<code>useState</code>, <code>useEffect</code>, <code>useRef</code>) with no external state library.</li>
+            <li>Vite 6 for builds and HMR, with a <code>/api</code> proxy to the Java backend during development.</li>
+            <li>Real-time updates via <code>EventSource</code> SSE listener on <code>/api/stream</code>, with automatic reconnect and backoff.</li>
+            <li>TypeScript discriminated union types across all signal and event model types for type-safe parsing and rendering.</li>
+            <li>Dual-mode preferences — <code>localStorage</code> for anonymous users, server-side persistence for authenticated users.</li>
+            <li>Accessible light/dark themes with customizable accent colors, driven by CSS variables.</li>
+            <li>Admin and diagnostics dashboard built directly into the UI — collector health, live event feed, trend charts, and config viewer.</li>
+            <li>Deployed as a static build to AWS S3 + CloudFront CDN.</li>
           </ul>
         </section>
+      </section>
+
+      <section className="card">
+        <h3>Architecture and engineering themes</h3>
+        <p className="meta section-description">Patterns that keep the system resilient, observable, and easy to extend.</p>
+        <ul>
+          <li><strong>Pub/Sub event bus</strong> — collectors publish domain events; the SSE broadcaster and event store subscribe independently. Ingestion, delivery, and storage are fully decoupled.</li>
+          <li><strong>Collector plugin pattern</strong> — each data source implements a single <code>poll()</code> interface. New signal types can be added without changing core infrastructure.</li>
+          <li><strong>JSONL append-only event store</strong> — all system events are logged in line-delimited JSON, enabling operational replay, trend analysis, and debugging without a database.</li>
+          <li><strong>SSE broadcaster</strong> — maintains persistent client connections with 15-second heartbeats, pushing updates the moment they are published to the event bus.</li>
+          <li><strong>Graceful degradation</strong> — upstream API failures produce empty results, not crashes. The dashboard stays readable throughout collector failures and slow upstreams.</li>
+          <li><strong>Clear module boundaries</strong> — ingestion (<code>collectors</code>), models and events (<code>core</code>), and delivery plus auth (<code>service</code>) are compiled as separate Maven modules with explicit dependencies.</li>
+          <li><strong>Observability as a product feature</strong> — the diagnostics dashboard, event feed, and trend analysis are built into the UI, not added as an afterthought.</li>
+        </ul>
       </section>
 
       <section className="card about-architecture">
@@ -102,45 +147,66 @@ export default function AboutPage() {
         <div className="about-architecture-diagrams">
           <div className="about-architecture-diagram">
             <h4>System Architecture</h4>
-            <img
-              src="/architecture/system-architecture-diagram.png"
-              alt="System architecture diagram"
-              loading="lazy"
-            />
+            <button
+              className="about-diagram-trigger"
+              onClick={() => openLightbox('/architecture/system-architecture-diagram.svg', 'System architecture diagram')}
+              aria-label="View system architecture diagram full screen"
+            >
+              <img
+                src="/architecture/system-architecture-diagram.svg"
+                alt="System architecture diagram"
+                loading="lazy"
+              />
+              <span className="about-diagram-zoom-hint" aria-hidden="true">Click to enlarge</span>
+            </button>
           </div>
           <div className="about-architecture-diagram">
             <h4>AWS Deployment Architecture</h4>
-            <img
-              src="/architecture/aws-deployment-diagram.png"
-              alt="AWS deployment architecture diagram"
-              loading="lazy"
-            />
+            <button
+              className="about-diagram-trigger"
+              onClick={() => openLightbox('/architecture/aws-deployment-diagram.png', 'AWS deployment architecture diagram')}
+              aria-label="View AWS deployment architecture diagram full screen"
+            >
+              <img
+                src="/architecture/aws-deployment-diagram.png"
+                alt="AWS deployment architecture diagram"
+                loading="lazy"
+              />
+              <span className="about-diagram-zoom-hint" aria-hidden="true">Click to enlarge</span>
+            </button>
           </div>
         </div>
       </section>
 
-      <section className="settings-grid">
-        <section className="card">
-          <h3>AI-Assisted Engineering Workflow</h3>
-          <p>ChatGPT and Codex were used throughout development to help:</p>
-          <ul>
-            <li>brainstorm approaches</li>
-            <li>refine implementation details</li>
-            <li>generate targeted code patches</li>
-            <li>improve test coverage</li>
-            <li>accelerate incremental UX polish passes</li>
-          </ul>
-          <p>These tools acted as development accelerators and thought partners during implementation.</p>
-          <p>
-            Architecture decisions, product direction, engineering tradeoffs, and final code review remained intentional and hands-on throughout development.
-          </p>
-          <p>
-            One of the goals of this project is to demonstrate how modern engineers can use AI tools responsibly: not as a substitute for judgment,
-            but as a force multiplier for iteration, clarity, and delivery.
-          </p>
-          <p>All AI-generated code was reviewed, adjusted, and integrated using the same engineering standards applied to human-written code.</p>
-        </section>
+      <section className="card">
+        <h3>AI-Assisted Engineering Workflow</h3>
+        <p className="meta section-description">Three AI tools contributed at different stages and in different ways throughout development.</p>
+        <p>
+          <strong>ChatGPT</strong> was used for early ideation and architecture brainstorming — exploring implementation approaches and engineering tradeoffs before committing to a direction.
+        </p>
+        <p>
+          <strong>GitHub Copilot / Codex</strong> was used for inline code completion and targeted code generation during active development.
+        </p>
+        <p>
+          <strong>Claude Code</strong> (Anthropic&apos;s CLI agent) became the primary AI engineering partner for the current development phase. The workflow included:
+        </p>
+        <ul>
+          <li>Exploring large, unfamiliar parts of the codebase across multiple files with natural language queries.</li>
+          <li>Iterating on implementation details across Java and TypeScript in a single session.</li>
+          <li>Generating and refining unit tests to maintain consistent code coverage across the three-module build.</li>
+          <li>Incremental UX polish passes — adjusting styles, layout, and copy in fast loops.</li>
+          <li>Reviewing architectural tradeoffs before committing to a direction.</li>
+          <li>Diagnosing errors in compiler output, test failures, and API responses.</li>
+        </ul>
+        <p>
+          Architecture decisions, product direction, and final engineering judgment remained intentional and hands-on throughout. All AI-assisted code was reviewed and integrated against the same standards as human-written code.
+        </p>
+        <p>
+          One of the goals of this project is to demonstrate how modern engineers can use AI tools responsibly — not as a substitute for judgment, but as a force multiplier for iteration, clarity, and delivery.
+        </p>
+      </section>
 
+      <section className="settings-grid">
         <section className="card">
           <h3>What I learned</h3>
           <p className="meta section-description">The polish comes from small, repeatable decisions.</p>
@@ -148,13 +214,12 @@ export default function AboutPage() {
             <li>Balancing immediate UI feedback with eventual consistency in background refresh.</li>
             <li>Designing authentication flows that remain clear even when backend systems respond slowly.</li>
             <li>Treating observability and diagnostics as core product features rather than afterthoughts.</li>
-            <li>Working with modern Java concurrency primitives in a real system.</li>
-            <li>Building systems that evolve through small, iterative improvements.</li>
+            <li>Working with modern Java concurrency primitives — virtual threads and structured concurrency — in a real system under real conditions.</li>
+            <li>Building systems that evolve through small, iterative improvements rather than large rewrites.</li>
+            <li>Integrating AI-assisted workflows across multiple layers of the stack — from brainstorming and architecture to code generation, test writing, and UX polish — without losing engineering ownership of decisions.</li>
           </ul>
         </section>
-      </section>
 
-      <section className="settings-grid">
         <section className="card">
           <h3>Why this project matters</h3>
           <p className="meta section-description">A credible demo of engineering rigor and product thinking.</p>
@@ -162,6 +227,8 @@ export default function AboutPage() {
             <li>Demonstrates end-to-end ownership across data collection, storage, UI, and operational readiness.</li>
             <li>Shows attention to failure modes, diagnostics, and safe defaults.</li>
             <li>Built to be demo-friendly without sacrificing realistic architecture.</li>
+            <li>87% automated test coverage (97% core module), enforced via JaCoCo across a three-module Maven build.</li>
+            <li>Demonstrates responsible, hands-on AI-assisted engineering — using multiple AI tools as force multipliers without outsourcing judgment.</li>
             <li>Active learning project evolving through incremental releases.</li>
           </ul>
         </section>
@@ -320,5 +387,26 @@ export default function AboutPage() {
         </details>
       </section>
     </main>
+
+    {lightboxSrc && (
+      <div
+        className={`about-lightbox-overlay${zoomed ? ' zoomed' : ''}`}
+        onClick={closeLightbox}
+        role="dialog"
+        aria-modal="true"
+        aria-label={lightboxAlt}
+      >
+        <button className="about-lightbox-close" onClick={closeLightbox} aria-label="Close">
+          ×
+        </button>
+        <img
+          className={`about-lightbox-image${zoomed ? ' zoomed' : ''}`}
+          src={lightboxSrc ?? undefined}
+          alt={lightboxAlt}
+          onClick={e => { e.stopPropagation(); setZoomed(z => !z); }}
+        />
+      </div>
+    )}
+    </>
   );
 }
