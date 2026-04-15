@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -182,6 +184,37 @@ class SchedulerServiceTest {
 
         assertTrue(enabledRuns.get() > 0);
         assertEquals(0, disabledRuns.get());
+    }
+
+    @Test
+    void overlappingCollectorRunIsSkipped() throws Exception {
+        CountDownLatch firstRunStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstRun = new CountDownLatch(1);
+        AtomicInteger runCount = new AtomicInteger();
+
+        Collector slow = collector("slow", () -> {
+            firstRunStarted.countDown();
+            runCount.incrementAndGet();
+            releaseFirstRun.await(5, TimeUnit.SECONDS);
+            return CollectorResult.success("ok", Map.of());
+        });
+
+        SchedulerService scheduler = new SchedulerService(
+                List.of(new SchedulerService.ScheduledCollector(slow, Duration.ofMillis(5), true)),
+                context(new EventBus()),
+                5
+        );
+
+        scheduler.start();
+        assertTrue(firstRunStarted.await(2, TimeUnit.SECONDS), "First run should start promptly");
+
+        // Let ~12 intervals elapse while the first run is still blocked.
+        Thread.sleep(60);
+        assertEquals(1, runCount.get(), "Subsequent ticks must be skipped while first run is in progress");
+
+        releaseFirstRun.countDown();
+        Thread.sleep(30);
+        scheduler.shutdown();
     }
 
     @Test

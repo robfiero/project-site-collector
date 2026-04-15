@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,6 +60,50 @@ class MainRuntimeFlagsTest {
 
         assertTrue(flags.authEnabled());
         assertTrue(warnings.stream().anyMatch(w -> w.contains("Unknown AUTH_ENABLED=maybe")));
+    }
+
+    @Test
+    void missingAppEnvWarnsAndDefaultsToDev() {
+        List<String> warnings = new ArrayList<>();
+        Main.RuntimeFlags flags = Main.resolveRuntimeFlags(
+                Map.of("AUTH_ENABLED", "true"),  // APP_ENV intentionally absent
+                warnings::add
+        );
+
+        assertTrue(flags.devMode());
+        assertTrue(warnings.stream().anyMatch(w -> w.contains("APP_ENV is not set")),
+                "Expected a warning when APP_ENV is absent, got: " + warnings);
+    }
+
+    @Test
+    void jwtSecretRequiredInProdMode() {
+        List<String> warnings = new ArrayList<>();
+        IllegalStateException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> Main.resolveJwtSecret(false, Map.of(), warnings::add)
+        );
+        assertTrue(ex.getMessage().contains("JWT_SECRET"));
+        assertTrue(ex.getMessage().contains("production"));
+        assertTrue(warnings.isEmpty(), "No warning should be issued — the exception takes precedence");
+    }
+
+    @Test
+    void jwtSecretDefaultsWithWarningInDevMode() {
+        List<String> warnings = new ArrayList<>();
+        String secret = Main.resolveJwtSecret(true, Map.of(), warnings::add);
+
+        assertEquals("dev-only-secret-change-me", secret);
+        assertTrue(warnings.stream().anyMatch(w -> w.contains("JWT_SECRET is not set")),
+                "Expected an insecure-default warning in dev mode, got: " + warnings);
+    }
+
+    @Test
+    void jwtSecretUsedDirectlyWhenProvided() {
+        List<String> warnings = new ArrayList<>();
+        String secret = Main.resolveJwtSecret(false, Map.of("JWT_SECRET", "my-real-secret"), warnings::add);
+
+        assertEquals("my-real-secret", secret);
+        assertTrue(warnings.isEmpty(), "No warning expected when secret is explicitly set");
     }
 
     @Test

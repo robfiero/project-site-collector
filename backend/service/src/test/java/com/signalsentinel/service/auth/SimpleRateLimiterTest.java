@@ -22,6 +22,23 @@ class SimpleRateLimiterTest {
     }
 
     @Test
+    void rejectsNewKeysWhenAtMaxCapacity() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-02-25T10:00:00Z"));
+        SimpleRateLimiter limiter = new SimpleRateLimiter(clock, 5, 60, 2);
+
+        // Fill up to the cap with two distinct keys.
+        assertTrue(limiter.tryAcquire("key:1"));
+        assertTrue(limiter.tryAcquire("key:2"));
+
+        // A third distinct key should be rejected because the cap is 2.
+        assertFalse(limiter.tryAcquire("key:3"));
+
+        // Existing keys still work normally.
+        assertTrue(limiter.tryAcquire("key:1"));
+        assertTrue(limiter.tryAcquire("key:2"));
+    }
+
+    @Test
     void permitsAgainAfterWindowExpires() {
         MutableClock clock = new MutableClock(Instant.parse("2026-02-25T10:00:00Z"));
         SimpleRateLimiter limiter = new SimpleRateLimiter(clock, 2, 60);

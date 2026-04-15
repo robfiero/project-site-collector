@@ -48,7 +48,7 @@ export async function fetchSignals(): Promise<SignalsSnapshot> {
 }
 
 export async function fetchEvents(limit = 100): Promise<unknown[]> {
-  const response = await apiFetch(apiUrl(`/api/events?limit=${limit}`));
+  const response = await apiFetch(apiUrl(`/api/events?limit=${limit}`), withCredentials());
   if (!response.ok) {
     throw new Error(`Events request failed (${response.status})`);
   }

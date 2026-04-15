@@ -64,7 +64,7 @@ const FALLBACK_DEFAULT_WATCHLIST = ['DJIA', '^GSPC', 'ORCL', 'AAPL', 'SBUX', 'HD
 const FALLBACK_DEFAULT_NEWS_SOURCES = ['cnn', 'wsj', 'verge'];
 const DEFAULT_THEME_MODE = 'light';
 const DEFAULT_ACCENT = 'blue';
-const AUTH_TRANSITION_COLLECTORS = ['envCollector', 'rssCollector', 'localEventsCollector'];
+const AUTH_TRANSITION_COLLECTORS = ['envCollector', 'rssCollector'];
 const INTENDED_ROUTE_KEY = 'todays-overview:intended-route';
 const NEWS_DEBUG_STORAGE_KEY = 'todays-overview:debug-news';
 const NEWS_SOURCE_ICON_DOMAIN_OVERRIDES_BY_ID: Record<string, string> = {
@@ -218,6 +218,7 @@ export default function App() {
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const authRefreshTimerRef = useRef<number | null>(null);
   const lastSavedZipCodesRef = useRef<string[]>(zipCodes);
+  const wasAuthenticatedRef = useRef<boolean>(false);
 
   const refreshAfterAuthTransition = useCallback(async (targetZips: string[]) => {
     try {
@@ -292,7 +293,11 @@ export default function App() {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
+      // Only treat a 401 as "session expired" if the user was previously authenticated.
+      // A 401 on the initial anonymous load just means auth is required — not a lapsed session.
+      if (wasAuthenticatedRef.current) {
+        handleSessionExpired(setAuthUser, setSessionExpired, setAuthMessage, applyAnonymousDefaults);
+      }
     });
     return () => {
       setUnauthorizedHandler(null);
@@ -377,7 +382,7 @@ export default function App() {
         const [healthResponse, signalsResponse, eventsResponse, metricsResponse, statusResponse, defaultsResponse, configResponse, meResponse, outboxResponse, newsSourceSettings] = await Promise.all([
           fetchHealth(),
           fetchSignals(),
-          fetchEvents(100),
+          fetchEvents(100).catch((err) => isUnauthorizedError(err) ? [] : Promise.reject(err)),
           fetchMetrics(),
           fetchCollectorStatus(),
           fetchCatalogDefaults(),
@@ -420,6 +425,9 @@ export default function App() {
           settingsEffectiveSelectedSources: newsSourceSettings.effectiveSelectedSources
         });
         setConfigView(configResponse);
+        if (meResponse) {
+          wasAuthenticatedRef.current = true;
+        }
         setAuthUser(meResponse);
         setSessionExpired(false);
         setDevOutbox(outboxResponse);
@@ -556,6 +564,12 @@ export default function App() {
       if (disposed) {
         return;
       }
+      // Close any existing connection before opening a new one. Without this guard,
+      // React StrictMode's double-invoke can leave a previous EventSource open.
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
       setConnectionState((state) => (state === 'open' ? state : 'connecting'));
       const streamUrl = apiUrl('/api/stream');
       const source = authUser
@@ -621,8 +635,11 @@ export default function App() {
           void revalidateAuth();
         }
         setConnectionState('reconnecting');
-        const wait = retryDelayRef.current;
-        retryDelayRef.current = Math.min(retryDelayRef.current * 2, 10_000);
+        const base = retryDelayRef.current;
+        // Add ±20% jitter to prevent all clients from reconnecting at the same instant.
+        const jitter = base * 0.2 * (Math.random() * 2 - 1);
+        const wait = Math.round(base + jitter);
+        retryDelayRef.current = Math.min(base * 2, 30_000);
         reconnectTimerRef.current = window.setTimeout(connect, wait);
       };
     };
@@ -631,8 +648,10 @@ export default function App() {
     return () => {
       disposed = true;
       setConnectionState('closed');
+      retryDelayRef.current = 1000;
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
       if (authRefreshTimerRef.current !== null) {
         window.clearTimeout(authRefreshTimerRef.current);
@@ -641,6 +660,7 @@ export default function App() {
         window.clearTimeout(newsRefreshTimerRef.current);
       }
       eventSourceRef.current?.close();
+      eventSourceRef.current = null;
     };
   }, [authUser, revalidateAuth]);
 

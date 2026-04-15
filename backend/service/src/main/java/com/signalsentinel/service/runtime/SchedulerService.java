@@ -11,6 +11,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -24,6 +26,7 @@ public class SchedulerService {
     private final long minIntervalMillis;
     private final ScheduledExecutorService timerExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ExecutorService collectorExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    private final ConcurrentHashMap<String, CompletableFuture<?>> inFlight = new ConcurrentHashMap<>();
 
     public SchedulerService(List<ScheduledCollector> collectors, CollectorContext context) {
         this(collectors, context, 100);
@@ -43,12 +46,17 @@ public class SchedulerService {
             long intervalMillis = Math.max(minIntervalMillis, scheduled.interval().toMillis());
             LOGGER.info("Scheduler registered collector=" + scheduled.collector().name()
                     + " intervalSeconds=" + (intervalMillis / 1000.0));
-            timerExecutor.scheduleAtFixedRate(
-                    () -> collectorExecutor.submit(() -> runCollector(scheduled.collector())),
-                    0,
-                    intervalMillis,
-                    TimeUnit.MILLISECONDS
-            );
+            timerExecutor.scheduleAtFixedRate(() -> {
+                String name = scheduled.collector().name();
+                CompletableFuture<?> existing = inFlight.get(name);
+                if (existing != null && !existing.isDone()) {
+                    LOGGER.warning("Skipping collector=" + name + ": previous run still in progress");
+                    return;
+                }
+                CompletableFuture<?> future = CompletableFuture.runAsync(
+                        () -> runCollector(scheduled.collector()), collectorExecutor);
+                inFlight.put(name, future);
+            }, 0, intervalMillis, TimeUnit.MILLISECONDS);
         }
     }
 

@@ -26,7 +26,6 @@ import com.signalsentinel.service.store.JsonlEventStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -337,7 +336,7 @@ class AuthApiIntegrationTest {
     }
 
     @Test
-    void preferencesPutInvalidJsonClosesConnectionDeterministically() throws Exception {
+    void preferencesPutInvalidJsonReturns400() throws Exception {
         TestRuntime runtime = startRuntime(true);
         HttpClient client = HttpClient.newHttpClient();
         HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
@@ -346,19 +345,21 @@ class AuthApiIntegrationTest {
         )), HttpResponse.BodyHandlers.ofString());
         String cookie = cookieFrom(signup);
 
-        IOException exception = org.junit.jupiter.api.Assertions.assertThrows(IOException.class, () -> client.send(
+        // Malformed JSON is rejected with 400; the handler catches the Jackson IOException
+        // so the global error handler is never reached and no SEVERE log is emitted.
+        HttpResponse<String> response = client.send(
                 HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
                         .header("Cookie", cookie)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("{\"zipCodes\":["))
                         .build(),
                 HttpResponse.BodyHandlers.ofString()
-        ));
-        assertTrue(exception.getMessage().contains("header parser received no bytes"));
+        );
+        assertEquals(400, response.statusCode());
     }
 
     @Test
-    void preferencesPutMissingFieldsClosesConnectionDeterministically() throws Exception {
+    void preferencesPutMissingFieldsReturns400() throws Exception {
         TestRuntime runtime = startRuntime(true);
         HttpClient client = HttpClient.newHttpClient();
         HttpResponse<String> signup = client.send(jsonPost(runtime.uri("/api/auth/signup"), Map.of(
@@ -367,15 +368,17 @@ class AuthApiIntegrationTest {
         )), HttpResponse.BodyHandlers.ofString());
         String cookie = cookieFrom(signup);
 
-        IOException exception = org.junit.jupiter.api.Assertions.assertThrows(IOException.class, () -> client.send(
+        // A payload that omits required fields (null after Jackson deserialisation) is caught
+        // as an IllegalArgumentException in AuthService and returned as 400.
+        HttpResponse<String> response = client.send(
                 HttpRequest.newBuilder(runtime.uri("/api/me/preferences"))
                         .header("Cookie", cookie)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString(JsonUtils.objectMapper().writeValueAsString(Map.of("zipCodes", List.of("02108")))))
                         .build(),
                 HttpResponse.BodyHandlers.ofString()
-        ));
-        assertTrue(exception.getMessage().contains("header parser received no bytes"));
+        );
+        assertEquals(400, response.statusCode());
     }
 
     @Test

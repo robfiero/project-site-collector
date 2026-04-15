@@ -19,6 +19,15 @@ import com.signalsentinel.service.env.AirNowAqiSnapshot;
 import com.signalsentinel.service.env.NoaaWeatherSnapshot;
 import com.signalsentinel.service.env.ZipGeoRecord;
 import com.signalsentinel.service.env.ZipGeoStore;
+import com.signalsentinel.service.auth.AuthService;
+import com.signalsentinel.service.auth.JwtService;
+import com.signalsentinel.service.auth.PasswordHashing;
+import com.signalsentinel.service.auth.PasswordResetStore;
+import com.signalsentinel.service.auth.PreferencesStore;
+import com.signalsentinel.service.auth.ResetTokenService;
+import com.signalsentinel.service.auth.UserStore;
+import com.signalsentinel.core.util.HashingUtils;
+import com.signalsentinel.service.email.DevOutboxEmailSender;
 import com.signalsentinel.service.store.JsonFileSignalStore;
 import com.signalsentinel.service.store.JsonlEventStore;
 import org.junit.jupiter.api.AfterEach;
@@ -487,7 +496,12 @@ class ApiServerIntegrationTest {
 
     @Test
     void eventsEndpointSupportsDefaultSinceTypeAndLimitAndInvalidParams() throws Exception {
-        TestRuntime runtime = startRuntime();
+        TestRuntime runtime = startRuntimeWithAuth();
+        HttpClient client = HttpClient.newHttpClient();
+        // Sign up before publishing test events so the UserRegistered event timestamp is known to
+        // precede the test events (current time >> 2026-02-12), and we can account for it in counts.
+        String cookie = signupAndGetCookie(runtime, client);
+
         runtime.eventBus().publish(new AlertRaised(
                 Instant.parse("2026-02-12T20:00:00Z"),
                 "collector",
@@ -506,38 +520,38 @@ class ApiServerIntegrationTest {
                 Map.of("idx", 2)
         ));
 
-        HttpClient client = HttpClient.newHttpClient();
-
+        // 4 total: UserRegistered (current time) + 3 test events
         HttpResponse<String> defaultResponse = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(200, defaultResponse.statusCode());
-        assertEquals(3, JsonUtils.objectMapper().readTree(defaultResponse.body()).size());
+        assertEquals(4, JsonUtils.objectMapper().readTree(defaultResponse.body()).size());
 
+        // 3 events since 20:00:30Z: UserRegistered (current time > since) + NewsUpdated + AlertRaised(b)
         HttpResponse<String> sinceResponse = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events?since=2026-02-12T20:00:30Z")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events?since=2026-02-12T20:00:30Z")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(200, sinceResponse.statusCode());
-        assertEquals(2, JsonUtils.objectMapper().readTree(sinceResponse.body()).size());
+        assertEquals(3, JsonUtils.objectMapper().readTree(sinceResponse.body()).size());
 
         HttpResponse<String> typeResponse = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events?type=AlertRaised")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events?type=AlertRaised")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(200, typeResponse.statusCode());
         assertEquals(2, JsonUtils.objectMapper().readTree(typeResponse.body()).size());
 
         HttpResponse<String> limitResponse = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events?limit=1")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events?limit=1")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(200, limitResponse.statusCode());
         assertEquals(1, JsonUtils.objectMapper().readTree(limitResponse.body()).size());
 
         HttpResponse<String> invalidResponse = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events?since=not-an-instant&limit=nope")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events?since=not-an-instant&limit=nope")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(400, invalidResponse.statusCode());
@@ -639,19 +653,22 @@ class ApiServerIntegrationTest {
     }
 
     @Test
-    void collectorsRefreshEndpointInvalidJsonClosesRequestWithoutRefreshHook() throws Exception {
+    void collectorsRefreshEndpointInvalidJsonReturns400AndDoesNotTriggerRefresh() throws Exception {
         TestRuntime runtime = startRuntime(List.of(testCollector("siteCollector", 15)));
         AtomicReference<List<String>> refreshed = new AtomicReference<>(List.of());
         apiServer.setCollectorRefreshHook(names -> refreshed.set(List.copyOf(names)));
         HttpClient client = HttpClient.newHttpClient();
 
-        assertTrue(assertThrows(IOException.class, () -> client.send(
+        // Malformed JSON is caught by the handler and returns 400; the refresh hook must
+        // not be invoked so no unintended refresh occurs.
+        HttpResponse<String> response = client.send(
                 HttpRequest.newBuilder(runtime.uri("/api/collectors/refresh"))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("{\"collectors\":["))
                         .build(),
                 HttpResponse.BodyHandlers.ofString()
-        )).getMessage().contains("header parser received no bytes"));
+        );
+        assertEquals(400, response.statusCode());
         assertEquals(List.of(), refreshed.get());
     }
 
@@ -817,6 +834,54 @@ class ApiServerIntegrationTest {
         assertTrue(body.has("defaultNewsSources"));
         assertTrue(body.has("defaultWatchlist"));
         assertTrue(body.get("defaultWatchlist").isArray());
+    }
+
+    @Test
+    void configEndpointIsPublicEvenWhenAuthEnabled() throws Exception {
+        // /api/config returns application-level catalog data (available sources, defaults, etc.)
+        // needed by the UI before login to populate settings pickers. It must be accessible
+        // to unauthenticated callers regardless of whether auth is enabled.
+        TestRuntime runtime = startRuntimeWithAuth();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<String> unauthenticated = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/config")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, unauthenticated.statusCode());
+        JsonNode body = JsonUtils.objectMapper().readTree(unauthenticated.body());
+        assertTrue(body.has("defaultNewsSources"), "Catalog must be present for unauthenticated callers");
+    }
+
+    @Test
+    void requestBodyOverOneMegabyteReturns413() throws Exception {
+        // Verify that the server rejects any POST with Content-Length > 1 MB.
+        // Java's HttpClient treats Content-Length as a restricted header, so we use a raw
+        // socket to send the declaration manually without actually writing 2 MB of payload.
+        TestRuntime runtime = startRuntime();
+
+        int statusCode;
+        try (java.net.Socket socket = new java.net.Socket("localhost", runtime.port())) {
+            socket.setSoTimeout(5000);
+            java.io.OutputStream out = socket.getOutputStream();
+            String request =
+                    "POST /api/collectors/refresh HTTP/1.1\r\n" +
+                    "Host: localhost\r\n" +
+                    "Content-Type: application/json\r\n" +
+                    "Content-Length: " + (2 * 1024 * 1024) + "\r\n" +
+                    "Connection: close\r\n" +
+                    "\r\n" +
+                    "{\"collectors\":[]}";
+            out.write(request.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.flush();
+
+            java.io.BufferedReader in = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(socket.getInputStream()));
+            String statusLine = in.readLine(); // e.g. "HTTP/1.1 413 "
+            assertNotNull(statusLine, "Server must send a status line");
+            statusCode = Integer.parseInt(statusLine.split(" ")[1]);
+        }
+        assertEquals(413, statusCode);
     }
 
     @Test
@@ -1071,11 +1136,12 @@ class ApiServerIntegrationTest {
 
     @Test
     void eventsEndpointInvalidSinceReturns400() throws Exception {
-        TestRuntime runtime = startRuntime();
+        TestRuntime runtime = startRuntimeWithAuth();
         HttpClient client = HttpClient.newHttpClient();
+        String cookie = signupAndGetCookie(runtime, client);
 
         HttpResponse<String> invalidSince = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events?since=not-an-instant")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events?since=not-an-instant")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(400, invalidSince.statusCode());
@@ -1084,11 +1150,12 @@ class ApiServerIntegrationTest {
 
     @Test
     void eventsEndpointInvalidLimitReturns400() throws Exception {
-        TestRuntime runtime = startRuntime();
+        TestRuntime runtime = startRuntimeWithAuth();
         HttpClient client = HttpClient.newHttpClient();
+        String cookie = signupAndGetCookie(runtime, client);
 
         HttpResponse<String> invalidLimit = client.send(
-                HttpRequest.newBuilder(runtime.uri("/api/events?limit=not-a-number")).GET().build(),
+                HttpRequest.newBuilder(runtime.uri("/api/events?limit=not-a-number")).header("Cookie", cookie).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
         assertEquals(400, invalidLimit.statusCode());
@@ -1397,6 +1464,76 @@ class ApiServerIntegrationTest {
         URI uri(String path) {
             return URI.create("http://localhost:" + port + path);
         }
+    }
+
+    /** Starts a runtime with a real AuthService so auth-gated endpoints can be tested. */
+    private TestRuntime startRuntimeWithAuth() throws Exception {
+        Path tempDir = Files.createTempDirectory("signal-sentinel-service-auth-it-");
+        JsonFileSignalStore signalStore = new JsonFileSignalStore(tempDir.resolve("state/signals.json"));
+        JsonlEventStore eventStore = new JsonlEventStore(tempDir.resolve("logs/events.jsonl"));
+        EventBus eventBus = new EventBus((event, error) -> {
+            throw new AssertionError("EventBus handler error", error);
+        });
+        EventCodec.subscribeAll(eventBus, eventStore::append);
+        Clock clock = Clock.systemUTC();
+        AuthService authService = new AuthService(
+                new UserStore(tempDir.resolve("data/users.json")),
+                new PreferencesStore(tempDir.resolve("data/preferences.json")),
+                new PasswordResetStore(tempDir.resolve("data/password_resets.json")),
+                new TestPasswordHasher(),
+                new JwtService("test-secret-for-events-it", clock, Duration.ofHours(8)),
+                new ResetTokenService(),
+                new DevOutboxEmailSender(tempDir.resolve("data/outbox.json")),
+                eventBus,
+                clock,
+                "http://localhost:5173"
+        );
+        SseBroadcaster broadcaster = new SseBroadcaster(eventBus);
+        DiagnosticsTracker diagnosticsTracker = new DiagnosticsTracker(eventBus, clock, broadcaster::clientCount);
+        Map<String, Object> defaults = Map.of(
+                "defaultZipCodes", List.of("02108"),
+                "defaultNewsSources", List.of(
+                        Map.of("id", "cnn", "name", "CNN", "type", "rss", "url", "https://example.com/cnn",
+                                "enabledByDefault", true, "requiresConfig", false, "note", "")
+                ),
+                "defaultSelectedNewsSources", List.of("cnn"),
+                "defaultWatchlist", List.of("AAPL")
+        );
+        apiServer = new ApiServer(
+                0, signalStore, eventStore, broadcaster, List.of(),
+                diagnosticsTracker, defaults, Map.of(), authService, null, null,
+                false, "Lax", false, null, DEFAULT_ALLOWED_ORIGINS, true
+        );
+        apiServer.start();
+        return new TestRuntime(apiServer.actualPort(), signalStore, eventStore, eventBus, broadcaster);
+    }
+
+    /**
+     * Signs up a test user and returns the auth cookie value to use in subsequent requests.
+     * Requires a runtime started via {@link #startRuntimeWithAuth()}.
+     */
+    private String signupAndGetCookie(TestRuntime runtime, HttpClient client) throws Exception {
+        HttpResponse<String> resp = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/auth/signup"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"email\":\"test@example.com\",\"password\":\"password123\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        assertEquals(200, resp.statusCode(), "signup should succeed");
+        String setCookie = resp.headers().firstValue("Set-Cookie").orElseThrow(
+                () -> new AssertionError("No Set-Cookie header in signup response"));
+        // Extract just the cookie value (name=value portion before the first ;)
+        return setCookie.split(";")[0];
+    }
+
+    private static final class TestPasswordHasher implements PasswordHashing {
+        @Override
+        public String hash(String password) { return HashingUtils.sha256(password); }
+
+        @Override
+        public boolean verify(String encodedHash, String password) { return encodedHash.equals(hash(password)); }
     }
 
     private Collector testCollector(String name, long intervalSeconds) {

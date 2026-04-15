@@ -40,6 +40,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class ApiServer {
@@ -236,7 +237,7 @@ public class ApiServer {
             registerContext("/api/me/delete", this::handleAccountDelete);
             registerContext("/api/me/preferences", this::handlePreferences);
             registerContext("/api/dev/outbox", this::handleDevOutbox);
-            registerContext("/api/stream", sseBroadcaster::handle);
+            registerContext("/api/stream", this::handleStream);
             server.start();
         } catch (IOException e) {
             throw new IllegalStateException("Failed starting API server", e);
@@ -245,7 +246,8 @@ public class ApiServer {
 
     public void stop() {
         if (server != null) {
-            server.stop(0);
+            sseBroadcaster.closeAll();
+            server.stop(1);
         }
     }
 
@@ -261,7 +263,19 @@ public class ApiServer {
     }
 
     private void registerContext(String path, HttpHandler handler) {
-        HttpContext context = server.createContext(path, handler);
+        HttpContext context = server.createContext(path, (exchange) -> {
+            try {
+                handler.handle(exchange);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Unhandled error handling " + path, e);
+                try {
+                    writeJson(exchange, 500, Map.of("error", "internal_server_error"));
+                } catch (Exception ignored) {
+                    // Response may already be partially written; close cleanly.
+                    exchange.close();
+                }
+            }
+        });
         context.getFilters().add(corsFilter);
     }
 
@@ -348,15 +362,33 @@ public class ApiServer {
                 if (!allowedZips.isEmpty() && !allowedZips.contains(zip)) {
                     continue;
                 }
-                filtered.put(zip, entry.getValue());
+                // Enrich the location label with city/state from the geo store when available.
+                Object value = entry.getValue();
+                if (envService != null && value instanceof LocalHappeningsSignal signal) {
+                    String label = envService.labelForZip(zip);
+                    value = new LocalHappeningsSignal(label, signal.items(), signal.sourceAttribution(), signal.updatedAt());
+                }
+                filtered.put(zip, value);
             }
             snapshot.put("localHappenings", filtered);
         }
         writeJson(exchange, 200, snapshot);
     }
 
+    private void handleStream(HttpExchange exchange) throws IOException {
+        boolean authenticated = authService != null
+                && AuthMiddleware.readAuthCookie(exchange)
+                        .flatMap(authService::userForToken)
+                        .isPresent();
+        sseBroadcaster.handle(exchange, authenticated);
+    }
+
     private void handleEvents(HttpExchange exchange) throws IOException {
         if (!ensureGet(exchange)) {
+            return;
+        }
+        Optional<AuthUser> user = AuthMiddleware.requireUser(exchange, authService);
+        if (user.isEmpty()) {
             return;
         }
 
@@ -395,6 +427,9 @@ public class ApiServer {
         if (!ensurePost(exchange)) {
             return;
         }
+        if (rejectIfBodyTooLarge(exchange)) {
+            return;
+        }
         Consumer<List<String>> hook = collectorRefreshHook;
         if (hook == null) {
             writeJson(exchange, 501, Map.of("error", "collector_refresh_unavailable"));
@@ -407,8 +442,12 @@ public class ApiServer {
             if (!incoming.isEmpty()) {
                 requestedCollectors = incoming;
             }
+        } catch (IOException badJson) {
+            // Malformed JSON from the client — reject rather than silently using defaults.
+            writeJson(exchange, 400, Map.of("error", "invalid_request_body"));
+            return;
         } catch (RuntimeException ignored) {
-            // Keep default collector list when body is missing/invalid.
+            // Body absent or not a JSON object — use default collector list.
         }
         hook.accept(requestedCollectors);
         writeJson(exchange, 200, Map.of(
@@ -521,7 +560,9 @@ public class ApiServer {
         if (!ensureGet(exchange)) {
             return;
         }
-        writeJson(exchange, 200, configView);
+        Map<String, Object> combined = new java.util.LinkedHashMap<>(catalogDefaults);
+        combined.putAll(configView);
+        writeJson(exchange, 200, combined);
     }
 
     private void handleSettingsReset(HttpExchange exchange) throws IOException {
@@ -783,8 +824,8 @@ public class ApiServer {
             UserPreferences incoming = JsonUtils.objectMapper().readValue(exchange.getRequestBody(), UserPreferences.class);
             UserPreferences updated = authService.updatePreferences(user.get().id(), incoming);
             writeJson(exchange, 200, updated);
-        } catch (IllegalArgumentException badInput) {
-            writeJson(exchange, 400, Map.of("error", badInput.getMessage()));
+        } catch (IllegalArgumentException | IOException badInput) {
+            writeJson(exchange, 400, Map.of("error", "invalid_preferences"));
         }
     }
 
@@ -932,7 +973,44 @@ public class ApiServer {
         return query;
     }
 
+    private static final int MAX_REQUEST_BODY_BYTES = 1024 * 1024; // 1 MB
+
+    /**
+     * Returns {@code true} and sends a 413 response if the declared Content-Length exceeds the
+     * maximum allowed request body size. Returns {@code false} when the request is within limits
+     * (or has no Content-Length header). Callers should {@code return} immediately when this method
+     * returns {@code true}.
+     */
+    private boolean rejectIfBodyTooLarge(HttpExchange exchange) throws IOException {
+        String cl = exchange.getRequestHeaders().getFirst("Content-Length");
+        if (cl != null) {
+            try {
+                if (Long.parseLong(cl.trim()) > MAX_REQUEST_BODY_BYTES) {
+                    exchange.sendResponseHeaders(413, -1);
+                    exchange.close();
+                    return true;
+                }
+            } catch (NumberFormatException ignored) {
+                // Malformed — let the downstream body read proceed.
+            }
+        }
+        return false;
+    }
+
     private Map<String, Object> readBody(HttpExchange exchange) throws IOException {
+        String contentLengthHeader = exchange.getRequestHeaders().getFirst("Content-Length");
+        if (contentLengthHeader != null) {
+            try {
+                long contentLength = Long.parseLong(contentLengthHeader.trim());
+                if (contentLength > MAX_REQUEST_BODY_BYTES) {
+                    exchange.sendResponseHeaders(413, -1);
+                    exchange.close();
+                    throw new IOException("Request body too large (" + contentLength + " bytes)");
+                }
+            } catch (NumberFormatException ignored) {
+                // Malformed Content-Length — let the body read proceed; Jackson will stop on parse error.
+            }
+        }
         return JsonUtils.objectMapper().readValue(exchange.getRequestBody(), Map.class);
     }
 

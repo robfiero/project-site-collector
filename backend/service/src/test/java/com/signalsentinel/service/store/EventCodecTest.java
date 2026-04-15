@@ -4,6 +4,12 @@ import com.signalsentinel.core.events.AlertRaised;
 import com.signalsentinel.core.events.EnvAqiUpdated;
 import com.signalsentinel.core.events.EnvWeatherUpdated;
 import com.signalsentinel.core.events.Event;
+import com.signalsentinel.core.events.LoginFailed;
+import com.signalsentinel.core.events.LoginSucceeded;
+import com.signalsentinel.core.events.PasswordResetFailed;
+import com.signalsentinel.core.events.PasswordResetRequested;
+import com.signalsentinel.core.events.PasswordResetSucceeded;
+import com.signalsentinel.core.events.UserRegistered;
 import com.signalsentinel.core.util.JsonUtils;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +17,7 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -86,6 +93,52 @@ class EventCodecTest {
 
         assertEquals("EnvWeatherUpdated", parsedWeather.type());
         assertEquals("EnvAqiUpdated", parsedAqi.type());
+    }
+
+    @Test
+    void maskEmailObscuresMiddleOfLocalPart() {
+        assertEquals("s***a@example.com", EventCodec.maskEmail("shiela@example.com"));
+        assertEquals("t***y@acme.com",    EventCodec.maskEmail("tony@acme.com"));
+        assertEquals("a***@x.com",        EventCodec.maskEmail("a@x.com"));
+        assertEquals("a***b@x.com",        EventCodec.maskEmail("abb@x.com"));
+        assertEquals("***",               EventCodec.maskEmail(null));
+        assertEquals("***",               EventCodec.maskEmail("notanemail"));
+    }
+
+    @Test
+    void authEventsHaveEmailMaskedInJsonLineAndSseData() {
+        Instant t = Instant.parse("2026-02-12T20:00:00Z");
+        String email = "shiela@example.com";
+        String masked = "s***a@example.com";
+
+        assertEmailMasked(new UserRegistered(t, "uid-1", email), masked);
+        assertEmailMasked(new LoginSucceeded(t, "uid-1", email), masked);
+        assertEmailMasked(new LoginFailed(t, email, "bad password"), masked);
+        assertEmailMasked(new PasswordResetRequested(t, email), masked);
+        assertEmailMasked(new PasswordResetSucceeded(t, "uid-1", email), masked);
+        assertEmailMasked(new PasswordResetFailed(t, email, "expired"), masked);
+    }
+
+    @Test
+    void nonAuthEventsAreNotAlteredBySanitize() {
+        Event event = new AlertRaised(
+                Instant.parse("2026-02-12T20:00:00Z"),
+                "collector",
+                "something went wrong",
+                Map.of("k", "v")
+        );
+        String line = EventCodec.toJsonLine(event);
+        assertTrue(line.contains("something went wrong"));
+        assertFalse(line.contains("***"));
+    }
+
+    private void assertEmailMasked(Event event, String masked) {
+        String line = EventCodec.toJsonLine(event);
+        String sse = EventCodec.toSseData(event);
+        assertTrue(line.contains(masked), "expected masked email in toJsonLine for " + event.type());
+        assertTrue(sse.contains(masked),  "expected masked email in toSseData for " + event.type());
+        assertFalse(line.contains("shiela@example.com"), "raw email must not appear in toJsonLine for " + event.type());
+        assertFalse(sse.contains("shiela@example.com"),  "raw email must not appear in toSseData for " + event.type());
     }
 
     @Test

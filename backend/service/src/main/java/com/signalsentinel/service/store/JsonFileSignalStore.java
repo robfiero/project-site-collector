@@ -9,9 +9,9 @@ import com.signalsentinel.core.util.JsonUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -103,16 +103,19 @@ public class JsonFileSignalStore implements ServiceSignalStore {
     private void persist() {
         lock.lock();
         try {
-            Files.createDirectories(file.getParent());
-            try (OutputStream out = Files.newOutputStream(file)) {
-                MAPPER.writerWithDefaultPrettyPrinter().writeValue(out,
-                        new SignalSnapshotFile(
-                                new HashMap<>(sites),
-                                new HashMap<>(news),
-                                new HashMap<>(weather),
-                                new HashMap<>(localHappenings)
-                        ));
+            Path parent = file.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
             }
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(),
+                    new SignalSnapshotFile(
+                            new HashMap<>(sites),
+                            new HashMap<>(news),
+                            new HashMap<>(weather),
+                            new HashMap<>(localHappenings)
+                    ));
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             throw new IllegalStateException("Failed writing signals to " + file, e);
         } finally {

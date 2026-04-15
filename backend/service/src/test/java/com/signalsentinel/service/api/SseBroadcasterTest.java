@@ -16,6 +16,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SseBroadcasterTest {
@@ -29,7 +30,7 @@ class SseBroadcasterTest {
 
         try {
             Thread.currentThread().interrupt();
-            broadcaster.handle(exchange);
+            broadcaster.handle(exchange, false);
         } finally {
             Thread.interrupted();
         }
@@ -37,6 +38,24 @@ class SseBroadcasterTest {
         assertEquals(200, exchange.responseCode);
         assertTrue(exchange.responseHeaders.getFirst("Content-Type").contains("text/event-stream"));
         assertEquals(0, broadcaster.clientCount());
+    }
+
+    @Test
+    void restrictedEventTypesCoversAllAuthEventsAndExcludesSignalEvents() {
+        // Auth events carry PII (email addresses) and must be filtered from unauthenticated SSE clients.
+        assertTrue(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("LoginFailed"));
+        assertTrue(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("LoginSucceeded"));
+        assertTrue(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("UserRegistered"));
+        assertTrue(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("PasswordResetRequested"));
+        assertTrue(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("PasswordResetSucceeded"));
+        assertTrue(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("PasswordResetFailed"));
+
+        // Signal events must remain public so the anonymous dashboard receives live updates.
+        assertFalse(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("SiteFetched"));
+        assertFalse(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("WeatherUpdated"));
+        assertFalse(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("NewsUpdated"));
+        assertFalse(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("CollectorTickStarted"));
+        assertFalse(SseBroadcaster.RESTRICTED_EVENT_TYPES.contains("CollectorTickCompleted"));
     }
 
     private static final class FakeHttpExchange extends HttpExchange {

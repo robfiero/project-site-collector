@@ -155,7 +155,7 @@ class TicketmasterEventsCollectorTest {
     }
 
     @Test
-    void testOneZipFailureDoesNotPreventOtherZipSuccess_andWritesEmptySignalForFailedZip() throws Exception {
+    void testOneZipFailureDoesNotPreventOtherZipSuccess_andPreservesExistingDataForFailedZip() throws Exception {
         server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/events.json", exchange -> {
@@ -186,7 +186,8 @@ class TicketmasterEventsCollectorTest {
 
         var result = collector.poll(context).join();
         assertFalse(result.success());
-        assertEquals(0, store.getLocalHappenings("02108").orElseThrow().items().size());
+        // Failed ZIP should not overwrite existing data — with no prior data, store has no entry.
+        assertTrue(store.getLocalHappenings("02108").isEmpty(), "failed ZIP should not write empty signal");
         assertEquals(2, store.getLocalHappenings("98101").orElseThrow().items().size());
     }
 
@@ -403,7 +404,8 @@ class TicketmasterEventsCollectorTest {
 
         var result = collector.poll(context).join();
         assertFalse(result.success());
-        assertEquals(0, store.getLocalHappenings("02108").orElseThrow().items().size());
+        // Rate-limited ZIP should not overwrite existing data — with no prior data, store has no entry.
+        assertTrue(store.getLocalHappenings("02108").isEmpty(), "rate-limited ZIP should not write empty signal");
         assertEquals(2, store.getLocalHappenings("98101").orElseThrow().items().size());
     }
 

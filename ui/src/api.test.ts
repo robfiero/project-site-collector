@@ -75,7 +75,7 @@ describe('fetchEvents', () => {
     );
 
     await fetchEvents();
-    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/events?limit=100'));
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/events?limit=100'), { credentials: 'include' });
   });
 
   it('uses explicit limit parameter', async () => {
@@ -87,7 +87,7 @@ describe('fetchEvents', () => {
     );
 
     await fetchEvents(5);
-    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/events?limit=5'));
+    expect(fetchMock).toHaveBeenCalledWith(apiUrl('/api/events?limit=5'), { credentials: 'include' });
   });
 
   it('throws on non-ok response', async () => {

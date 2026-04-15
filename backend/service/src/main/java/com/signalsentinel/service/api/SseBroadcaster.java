@@ -9,16 +9,35 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class SseBroadcaster {
+
+    /**
+     * Event types that carry PII (email addresses, auth state) and must not be
+     * sent to unauthenticated SSE clients.
+     */
+    static final Set<String> RESTRICTED_EVENT_TYPES = Set.of(
+            "LoginFailed",
+            "LoginSucceeded",
+            "UserRegistered",
+            "PasswordResetRequested",
+            "PasswordResetSucceeded",
+            "PasswordResetFailed"
+    );
+
     private final List<SseClient> clients = new CopyOnWriteArrayList<>();
 
     public SseBroadcaster(EventBus eventBus) {
         EventCodec.subscribeAll(eventBus, this::broadcast);
     }
 
-    public void handle(HttpExchange exchange) throws IOException {
+    /**
+     * Registers an SSE client. {@code authenticated} controls whether
+     * restricted (PII-carrying) events are forwarded to this client.
+     */
+    public void handle(HttpExchange exchange, boolean authenticated) throws IOException {
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
@@ -31,7 +50,7 @@ public class SseBroadcaster {
         exchange.sendResponseHeaders(200, 0);
 
         OutputStream out = exchange.getResponseBody();
-        SseClient client = new SseClient(exchange, out);
+        SseClient client = new SseClient(exchange, out, authenticated, Thread.currentThread());
         clients.add(client);
 
         try {
@@ -53,7 +72,12 @@ public class SseBroadcaster {
         String payload = "event: " + event.type() + "\n" +
                 "data: " + EventCodec.toSseData(event) + "\n\n";
 
+        boolean isRestricted = RESTRICTED_EVENT_TYPES.contains(event.type());
+
         for (SseClient client : clients) {
+            if (isRestricted && !client.authenticated()) {
+                continue;
+            }
             try {
                 writeRaw(client, payload);
             } catch (Exception e) {
@@ -66,6 +90,16 @@ public class SseBroadcaster {
         return clients.size();
     }
 
+    /**
+     * Interrupts all active SSE handler threads so they exit their keepalive sleep promptly.
+     * Call this before stopping the HTTP server to avoid waiting out the full stop grace period.
+     */
+    public void closeAll() {
+        for (SseClient client : clients) {
+            client.handlerThread().interrupt();
+        }
+    }
+
     private void writeRaw(SseClient client, String data) throws IOException {
         synchronized (client) {
             client.outputStream().write(data.getBytes(StandardCharsets.UTF_8));
@@ -75,10 +109,11 @@ public class SseBroadcaster {
 
     private void removeClient(SseClient client) {
         clients.remove(client);
+        client.handlerThread().interrupt();
         client.close();
     }
 
-    private record SseClient(HttpExchange exchange, OutputStream outputStream) {
+    private record SseClient(HttpExchange exchange, OutputStream outputStream, boolean authenticated, Thread handlerThread) {
         private void close() {
             try {
                 outputStream.close();

@@ -60,7 +60,7 @@ public final class EventCodec {
     public static String toJsonLine(Event event) {
         try {
             long nowMillis = Instant.now().toEpochMilli();
-            return MAPPER.writeValueAsString(new StoredEvent(event.type(), nowMillis, nowMillis, event));
+            return MAPPER.writeValueAsString(new StoredEvent(event.type(), nowMillis, nowMillis, sanitize(event)));
         } catch (IOException e) {
             throw new IllegalStateException("Unable to serialize event", e);
         }
@@ -83,10 +83,47 @@ public final class EventCodec {
     public static String toSseData(Event event) {
         try {
             long nowMillis = Instant.now().toEpochMilli();
-            return MAPPER.writeValueAsString(new StoredEvent(event.type(), nowMillis, nowMillis, event));
+            return MAPPER.writeValueAsString(new StoredEvent(event.type(), nowMillis, nowMillis, sanitize(event)));
         } catch (IOException e) {
             throw new IllegalStateException("Unable to serialize SSE event", e);
         }
+    }
+
+    /** Returns a copy of the event with the email field masked, or the original event unchanged. */
+    private static Event sanitize(Event event) {
+        return switch (event) {
+            case UserRegistered e ->
+                    new UserRegistered(e.timestamp(), e.userId(), maskEmail(e.email()));
+            case LoginSucceeded e ->
+                    new LoginSucceeded(e.timestamp(), e.userId(), maskEmail(e.email()));
+            case LoginFailed e ->
+                    new LoginFailed(e.timestamp(), maskEmail(e.email()), e.reason());
+            case PasswordResetRequested e ->
+                    new PasswordResetRequested(e.timestamp(), maskEmail(e.email()));
+            case PasswordResetSucceeded e ->
+                    new PasswordResetSucceeded(e.timestamp(), e.userId(), maskEmail(e.email()));
+            case PasswordResetFailed e ->
+                    new PasswordResetFailed(e.timestamp(), maskEmail(e.email()), e.reason());
+            default -> event;
+        };
+    }
+
+    /**
+     * Masks an email address for storage and transmission.
+     * {@code shiela@example.com} → {@code s***a@example.com}
+     * Only the first and last characters of the local part are preserved.
+     */
+    static String maskEmail(String email) {
+        if (email == null || !email.contains("@")) {
+            return "***";
+        }
+        int atIdx = email.indexOf('@');
+        String local = email.substring(0, atIdx);
+        String rest = email.substring(atIdx); // includes '@'
+        if (local.length() <= 1) {
+            return local + "***" + rest;
+        }
+        return local.charAt(0) + "***" + local.charAt(local.length() - 1) + rest;
     }
 
     public static void subscribeAll(com.signalsentinel.core.bus.EventBus bus, Consumer<Event> consumer) {

@@ -92,11 +92,13 @@ public final class EnvService {
     }
 
     private EnvStatus resolveStatus(String zip, boolean includeAqi) {
-        ZipGeoRecord geo = zipGeoStore.get(zip).orElseGet(() -> {
-            ZipGeoRecord resolved = zipGeoResolver.resolve(zip);
-            zipGeoStore.put(resolved);
-            return resolved;
-        });
+        ZipGeoRecord geo = zipGeoStore.get(zip)
+                .filter(r -> r.city() != null && !r.city().isBlank())
+                .orElseGet(() -> {
+                    ZipGeoRecord resolved = zipGeoResolver.resolve(zip);
+                    zipGeoStore.put(resolved);
+                    return resolved;
+                });
 
         NoaaWeatherSnapshot weatherSnapshot = weatherLookup.apply(geo.lat(), geo.lon());
         EnvStatus.Weather weather = new EnvStatus.Weather(
@@ -148,8 +150,34 @@ public final class EnvService {
             );
         }
 
-        String locationLabel = buildLocationLabel(zip, weatherSnapshot.city(), weatherSnapshot.state());
+        String locationLabel = buildLocationLabel(zip, geo.city(), geo.state(), weatherSnapshot.city(), weatherSnapshot.state());
         return new EnvStatus(zip, locationLabel, geo.lat(), geo.lon(), weather, aqi, Instant.now(clock));
+    }
+
+    /**
+     * Returns a human-readable location label for a ZIP code.
+     * Checks the geo cache first; if missing, resolves via the offline dataset (in-memory, no
+     * network call for the ~41k ZIPs in the bundled file) and caches the result for future use.
+     */
+    public String labelForZip(String zip) {
+        if (zip == null || !zip.matches("\\d{5}")) {
+            return "ZIP " + zip;
+        }
+        ZipGeoRecord geo = zipGeoStore.get(zip)
+                .filter(r -> r.city() != null && !r.city().isBlank())
+                .orElseGet(() -> {
+                    try {
+                        ZipGeoRecord resolved = zipGeoResolver.resolve(zip);
+                        zipGeoStore.put(resolved);
+                        return resolved;
+                    } catch (Exception e) {
+                        return null;
+                    }
+                });
+        if (geo == null) {
+            return "ZIP " + zip;
+        }
+        return buildLocationLabel(zip, geo.city(), geo.state(), null, null);
     }
 
     public boolean isAirNowConfigured() {
@@ -179,7 +207,12 @@ public final class EnvService {
         return List.copyOf(normalized);
     }
 
-    private static String buildLocationLabel(String zip, String city, String state) {
+    private static String buildLocationLabel(String zip, String geoCity, String geoState,
+                                              String noaaCity, String noaaState) {
+        // Prefer the offline geo record's city/state (always available for known ZIPs).
+        // Fall back to whatever NOAA returns in its weather response.
+        String city  = geoCity  != null && !geoCity.isBlank()  ? geoCity  : noaaCity;
+        String state = geoState != null && !geoState.isBlank() ? geoState : noaaState;
         if (city != null && !city.isBlank() && state != null && !state.isBlank()) {
             return city + ", " + state + " (" + zip + ")";
         }

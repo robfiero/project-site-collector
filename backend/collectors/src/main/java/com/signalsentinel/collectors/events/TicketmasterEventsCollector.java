@@ -104,6 +104,9 @@ public final class TicketmasterEventsCollector implements Collector {
             }
             if (!outcome.success()) {
                 failedZips++;
+                // Do not overwrite previously stored data on transient failures (e.g. 429, timeout).
+                // The existing signal is stale but still useful until the next successful poll.
+                continue;
             }
             totalItems += outcome.items().size();
             ctx.signalStore().putLocalHappenings(new LocalHappeningsSignal(

@@ -124,6 +124,29 @@ class SseIntegrationTest {
         }
     }
 
+    /**
+     * Regression test for the null-authService NPE in handleStream.
+     * When auth is disabled (authService == null) and a client sends a stale auth cookie,
+     * the SSE endpoint must still open successfully rather than crashing with a NullPointerException.
+     */
+    @Test
+    void streamEndpointDoesNotNpeWhenAuthServiceIsNullAndCookiePresent() throws Exception {
+        TestRuntime runtime = startRuntime();
+        HttpClient client = HttpClient.newHttpClient();
+
+        HttpResponse<Stream<String>> response = client.send(
+                HttpRequest.newBuilder(runtime.uri("/api/stream"))
+                        .header("Cookie", "auth_token=stale-token-from-old-session")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofLines()
+        );
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type").orElse("").contains("text/event-stream"));
+        response.body().close();
+    }
+
     private List<String> readDataLines(Stream<String> lines, int target) {
         List<String> dataLines = new ArrayList<>();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);

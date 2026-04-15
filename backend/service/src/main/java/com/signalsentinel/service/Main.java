@@ -29,6 +29,7 @@ import com.signalsentinel.service.env.AirNowClient;
 import com.signalsentinel.service.env.EnvCollector;
 import com.signalsentinel.service.env.EnvService;
 import com.signalsentinel.service.env.NoaaClient;
+import com.signalsentinel.service.env.OfflineZipResolver;
 import com.signalsentinel.service.env.TigerwebZipResolver;
 import com.signalsentinel.service.env.ZipGeoStore;
 import com.signalsentinel.service.http.HttpClientFactory;
@@ -104,14 +105,14 @@ public final class Main {
         collectorContextConfig.put(SiteCollector.CONFIG_KEY, siteConfig);
         collectorContextConfig.put(RssNewsCollector.CONFIG_KEY, rssConfig);
 
-        HttpClient sharedHttpClient = HttpClientFactory.create(Duration.ofSeconds(5));
+        HttpClient sharedHttpClient = HttpClientFactory.create(Duration.ofSeconds(10));
 
         CollectorContext context = new CollectorContext(
                 sharedHttpClient,
                 eventBus,
                 signalStore,
                 Clock.systemUTC(),
-                Duration.ofSeconds(3),
+                Duration.ofSeconds(15),
                 collectorContextConfig
         );
 
@@ -151,13 +152,14 @@ public final class Main {
                 );
             }
             PasswordHasher passwordHasher = selectPasswordHasher(devMode, allowInsecureAuthHasher);
+            String jwtSecret = resolveJwtSecret(devMode, env, LOGGER::warning);
             authService = new AuthService(
                     new UserStore(dataDir.resolve("users.json")),
                     preferencesStore,
                     new PasswordResetStore(dataDir.resolve("password_resets.json")),
                     passwordHasher,
                     new JwtService(
-                            System.getenv().getOrDefault("JWT_SECRET", "dev-only-secret-change-me"),
+                            jwtSecret,
                             Clock.systemUTC(),
                             Duration.ofHours(8)
                     ),
@@ -220,7 +222,10 @@ public final class Main {
         }
         EnvService envService = new EnvService(
                 new ZipGeoStore(dataDir.resolve("zip-geo.json")),
-                new TigerwebZipResolver(sharedHttpClient, Duration.ofSeconds(6), Clock.systemUTC()),
+                new OfflineZipResolver(
+                        new TigerwebZipResolver(sharedHttpClient, Duration.ofSeconds(6), Clock.systemUTC()),
+                        Clock.systemUTC()
+                ),
                 new NoaaClient(
                         sharedHttpClient,
                         Duration.ofSeconds(6),
@@ -348,6 +353,20 @@ public final class Main {
         return PasswordHasher.portablePbkdf2();
     }
 
+    static String resolveJwtSecret(boolean devMode, Map<String, String> env, Consumer<String> warn) {
+        String secret = env.getOrDefault("JWT_SECRET", "").trim();
+        if (secret.isBlank()) {
+            if (!devMode) {
+                throw new IllegalStateException(
+                        "JWT_SECRET environment variable is required in production (APP_ENV=prod). " +
+                        "Set a long random string (e.g. openssl rand -hex 32).");
+            }
+            warn.accept("JWT_SECRET is not set; using insecure default. This is only acceptable in dev mode.");
+            return "dev-only-secret-change-me";
+        }
+        return secret;
+    }
+
     static RuntimeFlags resolveRuntimeFlags(Map<String, String> env, Consumer<String> warn) {
         String appEnvRaw = env.getOrDefault("APP_ENV", "dev");
         boolean devMode;
@@ -358,6 +377,9 @@ public final class Main {
         } else {
             devMode = true;
             warn.accept("Unknown APP_ENV=" + appEnvRaw + ", defaulting to dev");
+        }
+        if (!env.containsKey("APP_ENV")) {
+            warn.accept("APP_ENV is not set; defaulting to dev mode. Set APP_ENV=prod for production.");
         }
 
         String authEnabledRaw = env.getOrDefault("AUTH_ENABLED", "true");

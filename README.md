@@ -182,4 +182,4 @@ The system is deployed on AWS:
 
 ## Project status
 
-Active personal engineering project demonstrating production-style system design and modern development practices.
+Active personal engineering project demonstrating production-style system design and modern development practices. 

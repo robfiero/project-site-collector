@@ -120,6 +120,9 @@ public final class AuthService {
     }
 
     public UserPreferences updatePreferences(String userId, UserPreferences incoming) {
+        if (incoming.zipCodes() == null || incoming.watchlist() == null || incoming.newsSourceIds() == null) {
+            throw new IllegalArgumentException("invalid preferences");
+        }
         if (incoming.zipCodes().size() > 10) {
             throw new IllegalArgumentException("ZIP code limit exceeded");
         }
