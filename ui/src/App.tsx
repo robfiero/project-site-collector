@@ -668,15 +668,17 @@ export default function App() {
     if (authRefreshTimerRef.current !== null) {
       window.clearTimeout(authRefreshTimerRef.current);
     }
-    authRefreshTimerRef.current = window.setTimeout(() => {
-      void revalidateAuth();
-    }, 15 * 60 * 1000);
+    if (authUser) {
+      authRefreshTimerRef.current = window.setTimeout(() => {
+        void revalidateAuth();
+      }, 15 * 60 * 1000);
+    }
     return () => {
       if (authRefreshTimerRef.current !== null) {
         window.clearTimeout(authRefreshTimerRef.current);
       }
     };
-  }, [revalidateAuth]);
+  }, [authUser, revalidateAuth]);
 
   useEffect(() => {
     if (eventFeedPaused || pausedEventBuffer.length === 0) {
@@ -1021,6 +1023,7 @@ export default function App() {
     try {
       await logout();
       const nextZips = loadZipCodes();
+      wasAuthenticatedRef.current = false;
       setAuthUser(null);
       setSessionExpired(false);
       setAuthMessage(null);
@@ -1039,6 +1042,7 @@ export default function App() {
   const deleteAccount = async (): Promise<'ok' | 'error'> => {
     try {
       await deleteMyAccount();
+      wasAuthenticatedRef.current = false;
       setAuthUser(null);
       setSessionExpired(false);
       setAuthMessage(null);
