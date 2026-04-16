@@ -9,10 +9,12 @@ source "$SCRIPT_DIR/lib/banner.sh"
 usage() {
   echo "Usage:" >&2
   echo "  $0 dev" >&2
-  echo "  $0 prod <repository> <app-runner-service-arn> [aws-profile]" >&2
+  echo "  $0 prod" >&2
+  echo "" >&2
+  echo "  prod requires scripts/env/prod.local.env (copy from scripts/env/prod.env.example)" >&2
 }
 
-if [[ $# -lt 1 ]]; then
+if [[ $# -ne 1 ]]; then
   usage
   exit 1
 fi
@@ -40,14 +42,24 @@ if [[ "$ENVIRONMENT" == "dev" ]]; then
   exit 0
 fi
 
-if [[ $# -lt 3 || $# -gt 4 ]]; then
-  usage
+# prod — load secrets from prod.local.env
+ENV_FILE="$REPO_ROOT/scripts/env/prod.local.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  print_error "prod.local.env not found: $ENV_FILE"
+  print_error "Copy scripts/env/prod.env.example to scripts/env/prod.local.env and fill in your values."
   exit 1
 fi
 
-REPOSITORY="$2"
-SERVICE_ARN="$3"
-PROFILE="${4-}"
+set -a
+source "$ENV_FILE"
+set +a
+
+for var in ECR_REPOSITORY APP_RUNNER_SERVICE_ARN AWS_REGION; do
+  if [[ -z "${!var:-}" ]]; then
+    print_error "Required variable $var is not set in prod.local.env"
+    exit 1
+  fi
+done
 
 if [[ ! -x "$PUSH_SCRIPT" ]]; then
   print_error "Backend push script not found or not executable: $PUSH_SCRIPT"
@@ -60,19 +72,24 @@ if ! command -v aws >/dev/null 2>&1; then
 fi
 
 print_banner "BACKEND RELEASE" \
-  "Environment" "$ENVIRONMENT" \
-  "Repository" "$REPOSITORY" \
-  "Service ARN" "$SERVICE_ARN" \
-  "AWS Profile" "${PROFILE:-default}"
+  "Environment"   "$ENVIRONMENT" \
+  "Repository"    "$ECR_REPOSITORY" \
+  "Service ARN"   "$APP_RUNNER_SERVICE_ARN" \
+  "AWS Region"    "$AWS_REGION" \
+  "Image Tag"     "${BACKEND_IMAGE_TAG:-latest}" \
+  "AWS Profile"   "${AWS_PROFILE:-default}"
 
 "$BUILD_SCRIPT"
 
-if [[ -n "$PROFILE" ]]; then
-  "$PUSH_SCRIPT" "$REPOSITORY" "$PROFILE"
-  aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region us-east-1 --profile "$PROFILE"
-else
-  "$PUSH_SCRIPT" "$REPOSITORY"
-  aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region us-east-1
+PROFILE_ARGS=()
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  PROFILE_ARGS=(--profile "$AWS_PROFILE")
 fi
+
+"$PUSH_SCRIPT"
+aws apprunner start-deployment \
+  --service-arn "$APP_RUNNER_SERVICE_ARN" \
+  --region "$AWS_REGION" \
+  "${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}"
 
 print_success "Backend release completed successfully"

@@ -25,6 +25,9 @@ ui/.cache/
 # IDE / editor
 .vscode/
 
+# Local deployment secrets (copy from scripts/env/prod.env.example)
+scripts/env/prod.local.env
+
 # Local runtime artifacts
 backend/logs/
 backend/state/
